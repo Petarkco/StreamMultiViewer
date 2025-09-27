@@ -7,6 +7,61 @@ const input = document.getElementById("urlInput");
 const addBtn = document.getElementById("addBtn");
 const clearBtn = document.getElementById("clearBtn");
 const toolbar = document.getElementById("toolbar");
+const feedSelector = document.getElementById("feedSelector");
+// token used to cancel/ignore in-flight preset loaders (especially the async 9now probe)
+let presetLoadToken = 0;
+
+// restore saved view mode (persist between reloads)
+try {
+	const saved = localStorage.getItem("mv_viewMode");
+	if (saved && feedSelector) feedSelector.value = saved;
+} catch {}
+
+if (feedSelector) {
+	feedSelector.addEventListener("change", () => {
+		try {
+			localStorage.setItem("mv_viewMode", feedSelector.value);
+		} catch {}
+		const mode = feedSelector.value;
+		if (mode === "custom") {
+			// cancel any in-flight preset loaders
+			try {
+				presetLoadToken++;
+			} catch {}
+			// restore any saved custom streams from localStorage
+			try {
+				removeAllTiles(false);
+				streamEntries.length = 0;
+				const saved = loadList();
+				if (saved && saved.length) {
+					saved.forEach((entry) => {
+						streamEntries.push(entry);
+						addStreamTile(entry.url, entry.instanceId);
+					});
+				} else {
+					updateEmptyState();
+				}
+				layoutGrid();
+			} catch {}
+			return;
+		}
+		loadPresets(mode);
+	});
+}
+
+// When ch9 mode is selected, hovering the whole grid will show all city labels
+grid.addEventListener("pointerenter", () => {
+	try {
+		if (feedSelector && feedSelector.value === "ch9")
+			grid.classList.add("show-all-labels");
+	} catch {}
+});
+grid.addEventListener("pointerleave", () => {
+	try {
+		if (feedSelector && feedSelector.value === "ch9")
+			grid.classList.remove("show-all-labels");
+	} catch {}
+});
 
 addBtn.addEventListener("click", () => {
 	const raw = input.value.trim();
@@ -40,6 +95,9 @@ function addUrls(urls) {
 		added++;
 	});
 	if (added > 0) {
+		try {
+			localStorage.setItem("mv_viewMode", "custom");
+		} catch {}
 		saveList();
 		layoutGrid();
 	}
@@ -74,21 +132,92 @@ function loadList() {
 	}
 }
 
+// Preset feed loader: supports '9now', 'ch9', and 'custom'
+function loadPresets(mode) {
+	try {
+		// clear existing tiles and entries (do not overwrite persisted custom list)
+		removeAllTiles(false);
+		streamEntries.length = 0;
+		layoutGrid();
+	} catch {}
+
+	try {
+		localStorage.setItem("mv_viewMode", mode);
+	} catch {}
+	if (!mode || mode === "custom") return;
+
+	if (mode === "ch9") {
+		// map city codes to friendly names
+		const cityMap = {
+			syd: "Sydney",
+			mel: "Melbourne",
+			bne: "Brisbane",
+			adl: "Adelaide",
+			per: "Perth",
+			new: "Newcastle",
+			nlm: "Northern Rivers",
+			gcq: "Gold Coast",
+		};
+		// city codes used by original index.html
+		const cities = ["syd", "mel", "bne", "adl", "per", "new", "nlm", "gcq"];
+		cities.forEach((c) => {
+			const url = `https://9now-livestreams-fhd-t.akamaized.net/u/prod/simulcast/${c}/ch9/hls/r1/index.m3u8`;
+			const label = cityMap[c] || c.toUpperCase();
+			const entry = { url, instanceId: crypto.randomUUID(), labelText: label };
+			streamEntries.push(entry);
+			addStreamTile(entry.url, entry.instanceId, label);
+		});
+		layoutGrid();
+		return;
+	}
+
+	if (mode === "9now") {
+		// try up to 100 inputs like the example; add until first failure
+		(async () => {
+			const myToken = ++presetLoadToken;
+			for (let i = 1; i <= 100; i++) {
+				// if mode changed/cancelled, stop
+				if (myToken !== presetLoadToken) return;
+				const index = i.toString().padStart(2, "0");
+				const url = `https://9now-livestreams-v2.akamaized.net/prod/event/tbs/9now/input${index}/r1/index.m3u8`;
+				// quick HEAD check to avoid spamming invalid entries
+				try {
+					const ok = await preflightManifest(url, 3000);
+					if (!ok || !ok.ok) break;
+				} catch {
+					break;
+				}
+				// stop if mode changed while we awaited
+				if (myToken !== presetLoadToken) return;
+				const entry = { url, instanceId: crypto.randomUUID() };
+				streamEntries.push(entry);
+				addStreamTile(entry.url, entry.instanceId);
+			}
+			if (myToken === presetLoadToken) layoutGrid();
+		})();
+	}
+}
+
 function updateEmptyState() {
-	if ([...grid.children].every((el) => !el.classList.contains("tile"))) {
-		const div = document.createElement("div");
-		div.className = "empty";
-		div.textContent = "No streams yet.";
-		grid.appendChild(div);
+	const hasTile = [...grid.children].some((el) =>
+		el.classList.contains("tile")
+	);
+	const existing = grid.querySelector(".empty");
+	if (!hasTile) {
+		if (!existing) {
+			const div = document.createElement("div");
+			div.className = "empty";
+			div.textContent = "No streams yet.";
+			grid.appendChild(div);
+		}
 	} else {
-		const first = grid.querySelector(".empty");
-		if (first) first.remove();
+		if (existing) existing.remove();
 	}
 }
 
 // Preferences were intentionally removed: only stream list persists
 
-function addStreamTile(url, passedInstanceId) {
+function addStreamTile(url, passedInstanceId, labelText) {
 	const placeholder = grid.querySelector(".empty");
 	if (placeholder) placeholder.remove();
 
@@ -166,16 +295,23 @@ function addStreamTile(url, passedInstanceId) {
 	debugPanel.style.zIndex = 60;
 	debugPanel.style.background = "rgba(0,0,0,0.6)";
 	debugPanel.style.color = "#e7edf5";
-	debugPanel.style.padding = "6px 8px";
-	debugPanel.style.fontSize = "12px";
-	debugPanel.style.fontFamily =
-		'ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace';
-	debugPanel.style.maxWidth = "48%";
-	debugPanel.style.maxHeight = "48%";
+	// tighter padding and allow a wider panel to avoid internal scrollbars
+	debugPanel.style.padding = "4px 6px";
+	// let CSS handle font-size/family so it matches the page (we added .debug-panel in CSS)
+	debugPanel.style.maxWidth = "72%";
+	debugPanel.style.maxHeight = "72%";
 	debugPanel.style.overflow = "auto";
 	debugPanel.style.display = "none";
 	debugPanel.style.border = "1px solid rgba(255,255,255,0.06)";
 	tile.appendChild(debugPanel);
+
+	// Optional top-left label (used for ch9 city names)
+	if (labelText) {
+		const topLabel = document.createElement("div");
+		topLabel.className = "top-left-label";
+		topLabel.textContent = labelText;
+		tile.appendChild(topLabel);
+	}
 
 	tile.addEventListener("dblclick", (e) => {
 		// Ignore double-clicks that happen on UI elements (controls/menus)
@@ -403,7 +539,10 @@ function addStreamTile(url, passedInstanceId) {
 			// volume removed from debug panel
 
 			// codec: show the actual codec string if available
-			let codecs = "unknown";
+			let videoCodec = "unknown",
+				audioCodec = "unknown",
+				audioLang = "unknown",
+				audioBitrate = "N/A";
 			try {
 				if (rec.hls && rec.hls.levels && rec.hls.levels.length) {
 					const cur =
@@ -412,11 +551,82 @@ function addStreamTile(url, passedInstanceId) {
 								? rec.hls.currentLevel
 								: rec.hls.levels.length - 1
 						] || rec.hls.levels[0];
-					if (cur && cur.attrs && cur.attrs.CODECS) codecs = cur.attrs.CODECS;
-					else if (cur && cur.codec) codecs = cur.codec;
-				} else if (v && v.getVideoPlaybackQuality && v.currentSrc) {
-					// fallback: try parsing from currentSrc if it contains codecs (rare)
-					codecs = "unknown";
+					let codecsAttr =
+						cur && cur.attrs && cur.attrs.CODECS
+							? cur.attrs.CODECS
+							: cur && cur.codec
+							? cur.codec
+							: "";
+					if (codecsAttr) {
+						const parts = codecsAttr
+							.split(",")
+							.map((s) => s.trim())
+							.filter(Boolean);
+						if (parts.length >= 1) videoCodec = parts[0];
+						if (parts.length >= 2) audioCodec = parts[1];
+					}
+					// try to infer audio language/bitrate/channels from audioTracks if available
+					if (
+						rec.hls &&
+						Array.isArray(rec.hls.audioTracks) &&
+						typeof rec.hls.audioTrack === "number"
+					) {
+						const at = rec.hls.audioTracks[rec.hls.audioTrack];
+						if (at) {
+							audioLang = at.lang || at.name || audioLang;
+							// try several possible fields for bitrate/bandwidth and ignore non-positive values
+							let ab = null;
+							if (typeof at.bitrate === "number" && at.bitrate > 0)
+								ab = at.bitrate;
+							else if (typeof at.bandwidth === "number" && at.bandwidth > 0)
+								ab = at.bandwidth;
+							else if (at.attrs) {
+								const keys = Object.keys(at.attrs || {});
+								const findKey = (names) =>
+									keys.find((k) => names.includes(k.toUpperCase()));
+								const bkey = findKey(["BANDWIDTH", "bandwidth"]);
+								if (bkey) {
+									const parsed = parseInt(at.attrs[bkey], 10);
+									if (!isNaN(parsed) && parsed > 0) ab = parsed;
+								}
+								const ckey = findKey(["CHANNELS", "channels"]);
+								if (ckey) {
+									const parsed = parseInt(at.attrs[ckey], 10);
+									if (!isNaN(parsed) && parsed > 0)
+										audioChannels = parsed.toString();
+								}
+								const lkey = findKey(["LANGUAGE", "LANG", "language", "lang"]);
+								if (lkey) audioLang = at.attrs[lkey] || audioLang;
+							}
+							// also check explicit channel fields on the audioTrack
+							if (typeof at.channels === "number" && at.channels > 0)
+								audioChannels = String(at.channels);
+							if (typeof at.channelCount === "number" && at.channelCount > 0)
+								audioChannels = String(at.channelCount);
+							if (ab && ab > 0) audioBitrate = Math.round(ab / 1000) + " kbps";
+						}
+					}
+					// fallback: if audio codec still unknown, scan levels for a second codec in CODECS
+					if (
+						(audioCodec === "unknown" || !audioCodec) &&
+						Array.isArray(rec.hls.levels)
+					) {
+						for (const L of rec.hls.levels) {
+							try {
+								const ca =
+									(L && L.attrs && L.attrs.CODECS) || (L && L.codec) || "";
+								if (!ca) continue;
+								const parts = ca
+									.split(",")
+									.map((s) => s.trim())
+									.filter(Boolean);
+								if (parts.length >= 2) {
+									audioCodec = parts[1];
+									break;
+								}
+							} catch {}
+						}
+					}
 				}
 			} catch {}
 
@@ -433,6 +643,50 @@ function addStreamTile(url, passedInstanceId) {
 					const last = rec._netActivity[rec._netActivity.length - 1];
 					if (last && last.bytes && last.dt)
 						kbps = Math.round(last.bytes / (last.dt / 1000) / 1000) + " Kbps";
+				}
+			} catch {}
+
+			// current stream bitrate (from the current hls level when available)
+			let curBitrate = "N/A";
+			try {
+				if (
+					rec.hls &&
+					rec.hls.levels &&
+					rec.hls.levels.length &&
+					typeof rec.hls.currentLevel === "number" &&
+					rec.hls.currentLevel >= 0
+				) {
+					const lvl = rec.hls.levels[rec.hls.currentLevel] || rec.hls.levels[0];
+					if (lvl && typeof lvl.bitrate === "number" && lvl.bitrate > 0)
+						curBitrate = Math.round(lvl.bitrate / 1000) + " kbps";
+				} else if (rec.hls && rec.hls.levels && rec.hls.levels.length) {
+					// fallback: show the first level bitrate
+					const lvl = rec.hls.levels[0];
+					if (lvl && typeof lvl.bitrate === "number" && lvl.bitrate > 0)
+						curBitrate = Math.round(lvl.bitrate / 1000) + " kbps";
+				}
+			} catch {}
+
+			// build current and max resolution+bitrate strings
+			let currentResStr = `${vw}x${vh}`;
+			try {
+				if (curBitrate && curBitrate !== "N/A")
+					currentResStr += " @ " + curBitrate;
+			} catch {}
+
+			let maxResStr = "?";
+			try {
+				if (rec.hls && rec.hls.levels && rec.hls.levels.length) {
+					const top = rec.hls.levels[rec.hls.levels.length - 1];
+					if (top) {
+						const tb =
+							typeof top.bitrate === "number" && top.bitrate > 0
+								? Math.round(top.bitrate / 1000) + " kbps"
+								: null;
+						maxResStr = `${top.width || "?"}x${top.height || "?"}${
+							tb ? " @ " + tb : ""
+						}`;
+					}
 				}
 			} catch {}
 
@@ -480,13 +734,53 @@ function addStreamTile(url, passedInstanceId) {
 					.join("");
 			} catch {}
 
+			// estimate audio bitrate from recent audio-ish fragments when audioBitrate is not available
+			let estimatedAudio = null;
+			try {
+				if (
+					(audioBitrate === "N/A" || audioBitrate === "0 kbps") &&
+					Array.isArray(rec._netActivity) &&
+					rec._netActivity.length
+				) {
+					const samples = rec._netActivity.slice().reverse();
+					let collectedBytes = 0,
+						collectedMs = 0,
+						count = 0;
+					for (const s of samples) {
+						if (count >= 12) break;
+						const isAudio =
+							s.type && String(s.type).toLowerCase().includes("audio");
+						const small = (s.bytes || 0) < 80 * 1024;
+						if (isAudio || small) {
+							collectedBytes += s.bytes || 0;
+							collectedMs += s.dt || 1000;
+							count++;
+						}
+					}
+					if (collectedMs > 0 && collectedBytes > 0) {
+						const bps = (collectedBytes * 8) / (collectedMs / 1000);
+						estimatedAudio = Math.round(bps / 1000) + " kbps";
+					}
+				}
+			} catch (e) {}
+
 			const html = `
 				<div style="font-weight:700;margin-bottom:6px">Stream URL &nbsp; <span style='font-weight:400'>${shortUrl}</span></div>
 				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Frames</div><div style='flex:1'>${framesInfo}</div></div>
-				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Current / Optimal Res</div><div style='flex:1'>${vw}x${vh} / ${optimal}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Current / Max</div><div style='flex:1'>${currentResStr} / ${maxResStr}</div></div>
 				<!-- volume removed -->
-				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Codec</div><div style='flex:1'>${codecs}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Video Codec / Bitrate</div><div style='flex:1'>${videoCodec} ${
+				curBitrate !== "N/A" ? "@ " + curBitrate : ""
+			}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Audio Codec / Lang / Ch</div><div style='flex:1'>${audioCodec} ${
+				audioLang && audioLang !== "unknown" ? "(" + audioLang + ")" : ""
+			} ${
+				audioChannels && audioChannels !== "unknown"
+					? "[" + audioChannels + "ch]"
+					: ""
+			}</div></div>
 				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Playback Speed</div><div style='flex:1'>${playbackRate}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Current Bitrate</div><div style='flex:1'>${curBitrate}</div></div>
 				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Connection Speed</div><div style='flex:1'>${kbps}</div></div>
 				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Network Activity</div><div style='flex:1'>${activityHtml}</div></div>
 				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Buffer Health</div><div style='flex:1'>${bufferHealth}</div></div>
@@ -668,9 +962,21 @@ function setupPlayer(rec) {
 								stats && stats.tload && stats.trequest
 									? Math.max(1, stats.tload - stats.trequest)
 									: 1000;
+							// try to capture fragment type (audio / main) when available
+							const fragType =
+								data && data.frag && data.frag.type
+									? data.frag.type
+									: data && data.frag && data.frag.cc
+									? String(data.frag.cc)
+									: "";
 							rec._netActivity = rec._netActivity || [];
-							rec._netActivity.push({ t: Date.now(), bytes: bytes, dt: dt });
-							if (rec._netActivity.length > 128) rec._netActivity.shift();
+							rec._netActivity.push({
+								t: Date.now(),
+								bytes: bytes,
+								dt: dt,
+								type: fragType,
+							});
+							if (rec._netActivity.length > 256) rec._netActivity.shift();
 						} catch (e) {}
 					} catch (e) {}
 				});
@@ -2042,7 +2348,7 @@ function destroyTile(el, url) {
 	updateEmptyState();
 }
 
-function removeAllTiles() {
+function removeAllTiles(save = true) {
 	for (const [, rec] of players.entries()) {
 		try {
 			stopHealthCheck(rec);
@@ -2064,7 +2370,7 @@ function removeAllTiles() {
 	players.clear();
 	streamEntries.splice(0, streamEntries.length);
 	try {
-		saveList();
+		if (save) saveList();
 	} catch {}
 	updateEmptyState();
 }
@@ -2123,6 +2429,21 @@ function getRecByTile(tile) {
 }
 
 (function init() {
+	try {
+		// prefer stored feed mode (preset) over saved custom list when present
+		const mode =
+			typeof feedSelector !== "undefined" && feedSelector
+				? localStorage.getItem("mv_viewMode") || feedSelector.value
+				: null;
+		if (mode && mode !== "custom") {
+			if (feedSelector) feedSelector.value = mode;
+			loadPresets(mode);
+			return;
+		}
+	} catch (e) {
+		/* fall back to loading saved list */
+	}
+
 	const saved = loadList();
 	if (saved.length) {
 		saved.forEach((entry) => {

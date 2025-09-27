@@ -40,12 +40,48 @@ body {
 	border: 1px solid #1e2430;
 	padding: 4px 6px;
 	display: grid;
-	grid-template-columns: 1fr auto auto;
+	/* selector | url input (flex) | add | clear */
+	grid-template-columns: auto 1fr auto auto;
 	gap: 6px;
 	align-items: center;
 	height: 42px;
 	min-height: 42px;
 	max-height: 42px;
+}
+
+/* feed selector next to URL input */
+#feedSelector {
+	height: 28px;
+	padding: 4px 6px;
+	margin-right: 6px;
+	background: #0f141b;
+	color: var(--text);
+	border: 1px solid #1e2430;
+	font-size: 13px;
+	min-width: 90px;
+	border-radius: 4px;
+}
+
+/* small top-left label used for ch9 city names (shows on hover) */
+.tile .top-left-label {
+	position: absolute;
+	left: 6px;
+	top: 6px;
+	background: rgba(0, 0, 0, 0.6);
+	color: var(--text);
+	padding: 4px 8px;
+	font-size: 13px;
+	border-radius: 4px;
+	display: none;
+	z-index: 6;
+}
+.tile:hover .top-left-label {
+	display: block;
+}
+
+/* show all top-left labels when the grid is marked (useful for ch9 preset) */
+.grid.show-all-labels .top-left-label {
+	display: block;
 }
 
 #urlInput {
