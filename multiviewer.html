@@ -77,7 +77,7 @@
             object-fit: contain;
         }
 
-        /* Control strip appears on hover */
+        /* Control strip appears on hover; JS can pin it with .sticky while slider is open */
         .controls {
             position: absolute;
             left: 6px;
@@ -94,11 +94,11 @@
             opacity: 0;
             transition: opacity .15s ease-in-out;
             pointer-events: none;
-            /* prevent focus when hidden */
         }
 
         .tile:hover .controls,
-        .controls:focus-within {
+        .controls:focus-within,
+        .controls.sticky {
             opacity: 1;
             pointer-events: auto;
         }
@@ -125,7 +125,6 @@
 
         .btn.icon {
             padding: 4px 8px;
-            width: auto;
         }
 
         .tag {
@@ -137,7 +136,7 @@
             white-space: nowrap;
         }
 
-        /* Error overlay (hidden by default) */
+        /* Error overlay */
         .error-box {
             position: absolute;
             top: 6px;
@@ -186,7 +185,7 @@
             word-break: break-word;
         }
 
-        /* Volume popover: keep open while hovering slider; JS will clamp position */
+        /* Volume popover driven by JS (no :hover gaps) */
         .vol-wrap {
             position: relative;
             display: inline-flex;
@@ -195,25 +194,28 @@
 
         .vol-pop {
             position: absolute;
-            top: auto;
-            bottom: 130%;
-            left: 50%;
-            transform: translateX(-50%);
             display: none;
             background: rgba(0, 0, 0, 0.7);
             border: 1px solid #2a2a2a;
             padding: 6px;
             white-space: nowrap;
             z-index: 6;
+            bottom: 130%;
+            left: 50%;
+            transform: translateX(-50%);
         }
 
-        .vol-wrap:hover .vol-pop,
-        .vol-pop:hover {
+        .vol-pop.open {
             display: block;
         }
 
+        .vol-pop.below {
+            top: 130%;
+            bottom: auto;
+        }
+
         .vol-pop input[type="range"] {
-            width: 160px;
+            width: 180px;
         }
 
         /* CC simple dropdown */
@@ -283,7 +285,7 @@
             video.playsInline = true;
             video.autoplay = true;
             video.controls = false;
-            video.muted = true; // start muted for autoplay
+            video.muted = true;
 
             const controls = document.createElement('div');
             controls.className = 'controls';
@@ -307,13 +309,36 @@
             const volSlider = volPop.querySelector('input');
 
             video.volume = parseFloat(volSlider.value);
+
+            // Show/hide logic with grace period; pin controls while open
+            let hideTimer = null;
+            function openVol() {
+                clearTimeout(hideTimer);
+                volPop.classList.add('open');
+                controls.classList.add('sticky');
+                positionVolumePop();
+            }
+            function scheduleCloseVol() {
+                clearTimeout(hideTimer);
+                hideTimer = setTimeout(() => {
+                    volPop.classList.remove('open');
+                    controls.classList.remove('sticky');
+                }, 200);
+            }
+
+            volWrap.addEventListener('mouseenter', openVol);
+            volWrap.addEventListener('mouseleave', (e) => {
+                // if leaving to the pop itself, keep open
+                if (!volPop.contains(e.relatedTarget)) scheduleCloseVol();
+            });
+            volPop.addEventListener('mouseenter', openVol);
+            volPop.addEventListener('mouseleave', scheduleCloseVol);
+
             volSlider.addEventListener('input', () => {
                 video.volume = parseFloat(volSlider.value);
                 if (video.volume === 0 && !video.muted) {
                     video.muted = true;
                     muteBtn.innerHTML = '<i class="bi bi-volume-mute"></i>';
-                } else if (video.volume > 0 && video.muted) {
-                    // keep muted until explicitly unmuted
                 }
             });
 
@@ -324,23 +349,38 @@
                     : '<i class="bi bi-volume-up"></i>';
             });
 
-            // Clamp the popover so it doesn't go off-screen
+            // Positioning: clamp horizontally to viewport, flip below if not enough space above
             function positionVolumePop() {
-                const pop = volPop;
-                pop.style.left = '50%';
-                pop.style.transform = 'translateX(-50%)';
-                pop.style.right = 'auto';
-                // After shown, clamp if needed
+                // reset to default above/center
+                volPop.classList.remove('below');
+                volPop.style.left = '50%';
+                volPop.style.transform = 'translateX(-50%)';
+
+                // after visible, compute
                 requestAnimationFrame(() => {
-                    const pr = pop.getBoundingClientRect();
-                    const gr = grid.getBoundingClientRect();
+                    const margin = 8;
+                    const pr = volPop.getBoundingClientRect();
+                    const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+
+                    // Flip below if cut off at the top
+                    if (pr.top < margin) {
+                        volPop.classList.add('below');
+                    }
+
+                    // Recompute after flip
+                    const pr2 = volPop.getBoundingClientRect();
+
+                    // Clamp horizontally to viewport
                     let dx = 0;
-                    if (pr.left < gr.left + 4) dx = (gr.left + 4) - pr.left;
-                    else if (pr.right > gr.right - 4) dx = (gr.right - 4) - pr.right;
-                    pop.style.transform = `translateX(calc(-50% + ${dx}px))`;
+                    if (pr2.left < margin) dx = margin - pr2.left;
+                    else if (pr2.right > vw - margin) dx = (vw - margin) - pr2.right;
+
+                    // Apply delta to the center translate
+                    volPop.style.transform = `translateX(calc(-50% + ${dx}px))`;
                 });
             }
-            volWrap.addEventListener('mouseenter', positionVolumePop);
+            window.addEventListener('resize', () => { if (volPop.classList.contains('open')) positionVolumePop(); });
+            window.addEventListener('scroll', () => { if (volPop.classList.contains('open')) positionVolumePop(); }, true);
 
             volWrap.appendChild(muteBtn);
             volWrap.appendChild(volPop);
@@ -372,7 +412,7 @@
             });
             right.appendChild(ccWrap);
 
-            // Remove tile (trash icon)
+            // Remove tile
             const rm = document.createElement('button');
             rm.className = 'btn';
             rm.innerHTML = '<i class="bi bi-trash"></i> Remove';
@@ -385,7 +425,7 @@
             controls.appendChild(left);
             controls.appendChild(right);
 
-            // Error box with warning icon
+            // Error box
             const err = document.createElement('div');
             err.className = 'error-box';
             err.innerHTML = '<div class="row"><strong><i class="bi bi-exclamation-triangle"></i> Stream Errors</strong><button type="button" data-close><i class="bi bi-x-lg"></i> Close</button></div><pre></pre>';
@@ -399,7 +439,6 @@
 
             // HLS plumbing
             let hls = null;
-            let usingNative = false;
 
             function logError(message) {
                 const ts = new Date().toLocaleTimeString();
@@ -407,25 +446,19 @@
                 err.style.display = 'block';
             }
 
-            // Build/refresh CC menu from both hls subtitleTracks and native textTracks
             function refreshCaptionMenu() {
-                const items = []; // {label, type:'hls'|'native', index}
-                // hls subtitle tracks
+                const items = [];
                 if (hls && Array.isArray(hls.subtitleTracks) && hls.subtitleTracks.length > 0) {
                     hls.subtitleTracks.forEach((t, i) => {
                         items.push({ label: t.name || t.lang || 'Subtitles', type: 'hls', index: i });
                     });
                 }
-                // native text tracks (covers Safari and CEA-608/708 exposed by hls.js when renderTextTracksNatively=false)
                 const nativeTracks = Array.from(video.textTracks || []).filter(t =>
                     t.kind === 'subtitles' || t.kind === 'captions'
                 );
                 nativeTracks.forEach((t, i) => {
                     const label = t.label || t.language || 'Subtitles';
-                    // avoid duplicate labels if already present from hls list
-                    if (!items.some(x => x.label === label)) {
-                        items.push({ label, type: 'native', index: i });
-                    }
+                    if (!items.some(x => x.label === label)) items.push({ label, type: 'native', index: i });
                 });
 
                 ccMenu.innerHTML = '';
@@ -433,7 +466,6 @@
                 off.className = 'cc-item';
                 off.textContent = 'Off';
                 off.addEventListener('click', () => {
-                    // turn off both
                     if (hls) {
                         hls.subtitleDisplay = false;
                         hls.subtitleTrack = -1;
@@ -449,13 +481,11 @@
                     node.className = 'cc-item';
                     node.textContent = it.label;
                     node.addEventListener('click', () => {
-                        // off everything first
                         if (hls) {
                             hls.subtitleDisplay = false;
                             hls.subtitleTrack = -1;
                         }
                         nativeTracks.forEach(t => t.mode = 'disabled');
-                        // then enable chosen
                         if (it.type === 'hls' && hls) {
                             hls.subtitleDisplay = true;
                             hls.subtitleTrack = it.index;
@@ -474,25 +504,19 @@
                     enableWorker: true,
                     lowLatencyMode: true,
                     backBufferLength: 60,
-                    renderTextTracksNatively: false // expose 608/708 as textTracks on the video
+                    renderTextTracksNatively: false
                 });
                 hls.attachMedia(video);
                 hls.on(Hls.Events.MEDIA_ATTACHED, () => { hls.loadSource(url); });
-
                 hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    // default CC off
                     hls.subtitleDisplay = false;
                     hls.subtitleTrack = -1;
                     refreshCaptionMenu();
                     video.play().catch(() => { });
                 });
-
-                // If subtitle tracks update later (common), refresh menu
                 hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, refreshCaptionMenu);
                 hls.on(Hls.Events.LEVEL_LOADED, refreshCaptionMenu);
                 hls.on(Hls.Events.SUBTITLE_TRACK_LOADED, refreshCaptionMenu);
-
-                // Error reporting (non-fatal & fatal)
                 hls.on(Hls.Events.ERROR, (_, data) => {
                     const { type, details, fatal } = data;
                     logError((fatal ? 'FATAL ' : '') + type + (details ? ' - ' + details : ''));
@@ -509,55 +533,46 @@
                                 break;
                         }
                     }
-                    // some errors add or change textTracks late
                     refreshCaptionMenu();
                 });
-
-                // When hls exposes CEA-608/708 as native text tracks, they may appear after playback starts
                 video.addEventListener('loadedmetadata', refreshCaptionMenu);
-                video.addEventListener('durationchange', refreshCaptionMenu);
-                video.addEventListener('timeupdate', () => {
-                    // light polling the first few seconds to catch late-appearing tracks
-                    if (!video._polledCC) {
-                        video._polledCC = 1;
-                        let n = 0;
-                        const id = setInterval(() => {
-                            refreshCaptionMenu();
-                            if (++n > 8) clearInterval(id);
-                        }, 500);
-                    }
+                video.addEventListener('play', () => {
+                    let n = 0;
+                    const id = setInterval(() => {
+                        refreshCaptionMenu();
+                        if (++n > 8) clearInterval(id);
+                    }, 500);
                 });
-
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                usingNative = true;
                 video.src = url;
-
-                const nativeRefreshHooks = () => {
-                    // Default all native text tracks OFF
+                const hook = () => {
                     const tracks = Array.from(video.textTracks || []);
                     tracks.forEach(t => t.mode = 'disabled');
                     refreshCaptionMenu();
                 };
-
-                video.addEventListener('loadedmetadata', nativeRefreshHooks);
-                video.addEventListener('error', () => {
-                    const me = video.error;
-                    logError('MEDIA ' + (me ? (me.message || me.code) : 'unknown') + ' (native)');
-                });
-                // Safari sometimes adds tracks after playback starts
+                video.addEventListener('loadedmetadata', hook);
                 video.addEventListener('play', () => setTimeout(refreshCaptionMenu, 300));
                 if (video.textTracks) {
                     video.textTracks.onaddtrack = refreshCaptionMenu;
                     video.textTracks.onchange = refreshCaptionMenu;
                 }
+                video.addEventListener('error', () => {
+                    const me = video.error;
+                    logError('MEDIA ' + (me ? (me.message || me.code) : 'unknown') + ' (native)');
+                });
                 video.play().catch(() => { });
             } else {
                 logError('HLS not supported on this browser.');
             }
+
+            // mount
+            tile.appendChild(video);
+            tile.appendChild(controls);
+            tile.appendChild(err);
+            grid.appendChild(tile);
         }
 
         // Optional: quick test via hash
-        // multiviewer.html#https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
         window.addEventListener('DOMContentLoaded', () => {
             const h = decodeURIComponent(location.hash.replace(/^#/, '')).trim();
             if (h && /^https?:\/\/.+/.test(h)) addTile(h);
