@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Multi HLS Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet" />
+    <style>
+        :root {
+            --bg: #0c0f14;
+            --panel: #12161d;
+            --text: #e7edf5;
+            --muted: #9aa6b2;
+            --gap: 10px;
+        }
+
+        html,
+        body {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial;
+            overflow: hidden
+        }
+
+        .wrap {
+            box-sizing: border-box;
+            width: 100vw;
+            height: 100vh;
+            padding: 6px;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            gap: 6px
+        }
+
+        .toolbar {
+            background: var(--panel);
+            border: 1px solid #1e2430;
+            padding: 4px 6px;
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 6px;
+            align-items: center;
+            height: 42px;
+            min-height: 42px;
+            max-height: 42px
+        }
+
+        #urlInput {
+            width: 100%;
+            height: 100%;
+            padding: 6px 8px;
+            font-size: 14px;
+            background: #0f141b;
+            color: var(--text);
+            border: 1px solid #1e2430;
+            border-radius: 0;
+            box-sizing: border-box
+        }
+
+        button {
+            padding: 4px 10px;
+            font-size: 13px;
+            height: 100%;
+            border: 1px solid #1e2430;
+            background: linear-gradient(180deg, #18202b, #131a24);
+            color: var(--text);
+            border-radius: 0;
+            cursor: pointer;
+            white-space: nowrap
+        }
+
+        button:hover {
+            background: linear-gradient(180deg, #1b2431, #161e29)
+        }
+
+        button:active {
+            transform: translateY(1px)
+        }
+
+        .grid {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            gap: var(--gap);
+            align-content: start;
+            overflow: hidden
+        }
+
+        .tile {
+            position: relative;
+            background: #000;
+            border: 1px solid #161c26;
+            border-radius: 0;
+            aspect-ratio: 16/9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            isolation: isolate
+        }
+
+        .tile video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+            display: block;
+            border-radius: 0
+        }
+
+        .hover-actions {
+            position: absolute;
+            right: 6px;
+            top: 6px;
+            display: flex;
+            gap: 6px;
+            z-index: 4;
+            opacity: 0;
+            transform: translateY(-4px);
+            transition: opacity 120ms ease, transform 120ms ease
+        }
+
+        .tile:hover .hover-actions {
+            opacity: 1;
+            transform: translateY(0)
+        }
+
+        .icon-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 0;
+            display: grid;
+            place-items: center;
+            background: rgba(0, 0, 0, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            cursor: pointer;
+            color: #e7edf5;
+            font-size: 18px;
+            line-height: 1
+        }
+
+        .icon-btn:hover {
+            background: rgba(255, 255, 255, 0.12)
+        }
+
+        .empty {
+            color: var(--muted);
+            text-align: center;
+            padding: 10px;
+            border: 1px dashed #1e2430;
+            background: #0c1118;
+            align-self: center;
+            justify-self: center
+        }
+
+        video::-webkit-media-controls {
+            display: none !important
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <div class="toolbar" id="toolbar">
+            <input id="urlInput" type="text" placeholder="Paste .m3u8 URL(s), separated by space/comma" />
+            <button id="addBtn" title="Add all URLs">Add</button>
+            <button id="clearBtn" title="Remove all streams">Clear All</button>
+        </div>
+        <div id="grid" class="grid" aria-live="polite"></div>
+    </div>
+
+    <script>
+        const LS_KEY = 'multiHlsUrls';
+        const players = new Map(); // id -> { hls, video, url, tile, backoffMs, lastTime, healthTimer, needsHeal }
+        const streamUrls = [];     // duplicates allowed
+
+        const grid = document.getElementById('grid');
+        const input = document.getElementById('urlInput');
+        const addBtn = document.getElementById('addBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const toolbar = document.getElementById('toolbar');
+
+        addBtn.addEventListener('click', () => {
+            const raw = input.value.trim(); if (!raw) return;
+            const urls = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+            addUrls(urls); input.value = '';
+        });
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); } });
+        clearBtn.addEventListener('click', () => { removeAllTiles(); saveList(); layoutGrid(); });
+
+        function addUrls(urls) {
+            let added = 0;
+            urls.forEach(u => { if (!u) return; streamUrls.push(u); addStreamTile(u); added++; });
+            if (added > 0) { saveList(); layoutGrid(); }
+            updateEmptyState();
+        }
+        function saveList() { try { localStorage.setItem(LS_KEY, JSON.stringify(streamUrls)); } catch { } }
+        function loadList() { try { const raw = localStorage.getItem(LS_KEY); if (!raw) return []; const arr = JSON.parse(raw); return Array.isArray(arr) ? arr.filter(Boolean) : []; } catch { return []; } }
+
+        function updateEmptyState() {
+            if ([...grid.children].every(el => !el.classList.contains('tile'))) {
+                const div = document.createElement('div'); div.className = 'empty'; div.textContent = 'No streams yet.'; grid.appendChild(div);
+            } else { const first = grid.querySelector('.empty'); if (first) first.remove(); }
+        }
+
+        function addStreamTile(url) {
+            const placeholder = grid.querySelector('.empty'); if (placeholder) placeholder.remove();
+
+            const tile = document.createElement('div'); tile.className = 'tile'; tile.tabIndex = 0;
+            const video = document.createElement('video');
+            video.setAttribute('playsinline', ''); video.setAttribute('muted', ''); video.muted = true; video.autoplay = true; video.controls = false; video.preload = 'auto';
+
+            const actions = document.createElement('div'); actions.className = 'hover-actions';
+            actions.innerHTML = `
+        <div class="icon-btn" title="Open stream URL in a new tab" data-action="open"><i class="ri-external-link-line"></i></div>
+        <div class="icon-btn" title="Refresh stream" data-action="refresh"><i class="ri-refresh-line"></i></div>
+        <div class="icon-btn" title="Unmute" data-action="mute"><i class="ri-volume-mute-line"></i></div>
+        <div class="icon-btn" title="Remove stream" data-action="close"><i class="ri-close-line"></i></div>
+      `;
+            tile.appendChild(video); tile.appendChild(actions); grid.appendChild(tile);
+
+            tile.addEventListener('dblclick', () => { if (!document.fullscreenElement) tile.requestFullscreen?.(); else document.exitFullscreen?.(); });
+
+            actions.addEventListener('click', (e) => {
+                const btn = e.target.closest('.icon-btn'); if (!btn) return;
+                const action = btn.getAttribute('data-action');
+                if (action === 'open') { window.open(url, '_blank', 'noopener'); }
+                else if (action === 'close') { destroyTile(tile, url); saveList(); layoutGrid(); }
+                else if (action === 'refresh') { const rec = getRecByTile(tile); if (rec) hardRefresh(rec); }
+                else if (action === 'mute') {
+                    video.muted = !video.muted;
+                    if (video.muted) { btn.title = 'Unmute'; btn.firstElementChild.className = 'ri-volume-mute-line'; }
+                    else { btn.title = 'Mute'; btn.firstElementChild.className = 'ri-volume-up-line'; video.play().catch(() => { }); }
+                }
+            });
+
+            const id = crypto.randomUUID();
+            const rec = { hls: null, video, url, tile, backoffMs: 0, lastTime: 0, healthTimer: null, needsHeal: false };
+            players.set(id, rec);
+
+            setupPlayer(rec);
+            startHealthCheck(rec);
+            layoutGrid();
+        }
+
+        function setupPlayer(rec) {
+            const { video, url } = rec;
+            if (rec.hls) { try { rec.hls.destroy(); } catch { } rec.hls = null; }
+            video.src = ''; video.load();
+
+            const ensurePlay = () => { const p = video.play(); if (p && typeof p.then === 'function') { p.catch(() => { const resume = () => { video.play().finally(() => window.removeEventListener('pointerdown', resume)); }; window.addEventListener('pointerdown', resume, { once: true }); }); } };
+
+            if (window.Hls && Hls.isSupported()) {
+                const hls = new Hls({ maxLiveSyncPlaybackRate: 1.5, enableWorker: true, lowLatencyMode: true, backBufferLength: 30, capLevelToPlayerSize: false });
+                rec.hls = hls;
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(url));
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    if (hls.levels && hls.levels.length > 0) { const top = hls.levels.length - 1; hls.nextLevel = top; hls.currentLevel = top; hls.loadLevel = top; }
+                    resetBackoff(rec); ensurePlay();
+                });
+                hls.on(Hls.Events.LEVEL_LOADED, () => { if (hls.levels && hls.levels.length > 0) { const top = hls.levels.length - 1; if (hls.currentLevel !== top) hls.currentLevel = top; } });
+                hls.on(Hls.Events.ERROR, (_, data) => {
+                    if (data.fatal) {
+                        // If hidden, queue a soft heal instead of reconnecting now
+                        if (document.hidden) { rec.needsHeal = true; return; }
+                        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { try { hls.recoverMediaError(); } catch { } scheduleReconnect(rec); }
+                        else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { scheduleReconnect(rec); }
+                        else { scheduleReconnect(rec); }
+                    } else {
+                        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR || data.details === Hls.ErrorDetails.INTERNAL_EXCEPTION) {
+                            if (document.hidden) { rec.needsHeal = true; return; }
+                            scheduleReconnect(rec);
+                        }
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+                video.addEventListener('loadedmetadata', () => { resetBackoff(rec); ensurePlay(); }, { once: true });
+            } else { showUnsupported(rec.tile); }
+        }
+
+        function hardRefresh(rec) {
+            try {
+                if (rec.hls) {
+                    rec.hls.stopLoad(); rec.hls.detachMedia(); rec.hls.attachMedia(rec.video); rec.hls.loadSource(rec.url);
+                } else {
+                    rec.video.pause();
+                    const u = new URL(rec.url, window.location.href); u.searchParams.set('_ts', Date.now().toString());
+                    rec.video.src = ''; rec.video.load(); rec.video.src = u.toString(); rec.video.play().catch(() => { });
+                }
+            } catch { setupPlayer(rec); }
+        }
+
+        function showUnsupported(tile) {
+            const msg = document.createElement('div'); msg.style.position = 'absolute'; msg.style.inset = '0'; msg.style.display = 'grid'; msg.style.placeItems = 'center';
+            msg.style.background = 'linear-gradient(180deg,#0a0f15,#0c121a)'; msg.style.color = '#ffb4b4'; msg.style.fontSize = '14px'; msg.style.padding = '12px';
+            msg.textContent = 'HLS not supported in this browser.'; tile.appendChild(msg);
+        }
+
+        function resetBackoff(rec) { rec.backoffMs = 0; }
+
+        // Do NOT reconnect while hidden; queue a soft heal instead
+        function scheduleReconnect(rec) {
+            if (document.hidden) { rec.needsHeal = true; return; }
+            rec.backoffMs = rec.backoffMs ? Math.min(rec.backoffMs * 2, 30000) : 1000;
+            clearTimeout(rec._reconnectTimer);
+            rec._reconnectTimer = setTimeout(() => softHeal(rec), rec.backoffMs);
+        }
+
+        // Soft heal: try to resume without reloading the source
+        function softHeal(rec) {
+            try {
+                if (rec.hls) {
+                    // Don’t stop/detach; just nudge loader/decoder
+                    rec.hls.startLoad();
+                    try { rec.hls.recoverMediaError(); } catch { }
+                }
+                rec.video.play().catch(() => { });
+                resetBackoff(rec);
+            } catch {
+                // As a last resort, rebuild
+                setupPlayer(rec);
+            }
+        }
+
+        function startHealthCheck(rec) {
+            rec.lastTime = 0;
+            rec.healthTimer = setInterval(() => {
+                if (document.hidden) return; // skip checks while hidden
+                const v = rec.video; if (!v || v.readyState === 0) return;
+                const now = v.currentTime;
+                if (!v.paused && Math.abs(now - rec.lastTime) < 0.1) { scheduleReconnect(rec); }
+                rec.lastTime = now;
+            }, 10000);
+        }
+        function stopHealthCheck(rec) { if (rec.healthTimer) clearInterval(rec.healthTimer); rec.healthTimer = null; }
+
+        // On visibility return, apply queued soft heals; do not reload sources
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                for (const [, rec] of players.entries()) {
+                    if (rec.needsHeal) {
+                        rec.needsHeal = false;
+                        softHeal(rec);
+                    } else {
+                        // Even if not queued, some browsers auto-pause; just try to resume
+                        rec.video.play().catch(() => { });
+                    }
+                }
+            }
+        });
+
+        // Only heal on actual network change (softly)
+        window.addEventListener('online', () => {
+            for (const [, rec] of players.entries()) {
+                setTimeout(() => { softHeal(rec); }, Math.floor(Math.random() * 500));
+            }
+        });
+
+        function destroyTile(el, url) {
+            for (const [key, rec] of players.entries()) {
+                if (rec.tile === el) {
+                    try { stopHealthCheck(rec); clearTimeout(rec._reconnectTimer); if (rec.hls) rec.hls.destroy(); rec.video.pause(); rec.video.src = ''; rec.video.load(); } catch { }
+                    players.delete(key); break;
+                }
+            }
+            const idx = streamUrls.indexOf(url); if (idx !== -1) streamUrls.splice(idx, 1);
+            el.remove(); updateEmptyState();
+        }
+
+        function removeAllTiles() {
+            for (const [, rec] of players.entries()) {
+                try { stopHealthCheck(rec); clearTimeout(rec._reconnectTimer); if (rec.hls) rec.hls.destroy(); rec.video.pause(); rec.video.src = ''; rec.video.load(); rec.tile.remove(); } catch { }
+            }
+            players.clear(); streamUrls.splice(0, streamUrls.length); updateEmptyState();
+        }
+
+        // Fit-all layout
+        function layoutGrid() {
+            const tiles = [...grid.children].filter(el => el.classList.contains('tile'));
+            const n = tiles.length;
+            if (n === 0) { grid.style.gridTemplateColumns = '1fr'; grid.style.gridAutoRows = '1fr'; return; }
+            const gap = parseFloat(getComputedStyle(grid).getPropertyValue('--gap')) || 10;
+            const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+            const toolbarRect = toolbar.getBoundingClientRect();
+            const availableW = vw - 2 * 6; const availableH = vh - toolbarRect.height - 2 * 6;
+            const aspectW = 16, aspectH = 9; let bestCols = 1, bestScale = 0;
+            for (let cols = 1; cols <= n; cols++) {
+                const rows = Math.ceil(n / cols);
+                const totalGapW = gap * (cols - 1), totalGapH = gap * (rows - 1);
+                const cellW = (availableW - totalGapW) / cols, cellH = (availableH - totalGapH) / rows;
+                if (cellW <= 0 || cellH <= 0) continue;
+                const scale = Math.min(cellW / aspectW, cellH / aspectH);
+                if (scale > bestScale) { bestScale = scale; bestCols = cols; }
+            }
+            const tileW = Math.floor(aspectW * bestScale), tileH = Math.floor(aspectH * bestScale);
+            grid.style.gridTemplateColumns = `repeat(${bestCols}, ${tileW}px)`;
+            grid.style.gridAutoRows = `${tileH}px`;
+        }
+
+        const ro = new ResizeObserver(() => layoutGrid());
+        ro.observe(document.documentElement); ro.observe(grid); ro.observe(toolbar);
+        window.addEventListener('orientationchange', () => setTimeout(layoutGrid, 50));
+        window.addEventListener('resize', () => layoutGrid());
+
+        function getRecByTile(tile) { for (const [, rec] of players.entries()) if (rec.tile === tile) return rec; return null; }
+
+        (function init() {
+            const saved = loadList();
+            if (saved.length) { saved.forEach(u => { streamUrls.push(u); addStreamTile(u); }); }
+            else { updateEmptyState(); layoutGrid(); }
+        })();
+    </script>
+</body>
+
+</html>
