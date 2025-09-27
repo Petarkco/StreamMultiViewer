@@ -6,94 +6,60 @@
     <title>Multi HLS Viewer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- Hls.js (latest) -->
+    <!-- hls.js -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
     <style>
-        :root {
-            --bg: #0e0f12;
-            --panel: #15171c;
-            --text: #e7e7ea;
-            --muted: #a9a9b2;
-            --accent: #3b82f6;
-            --danger: #ef4444;
-            --ok: #10b981;
-            --btn: #1f232b;
-            --btn-hover: #2b3140;
-            --overlay: rgba(0, 0, 0, 0.55);
-            --radius: 14px;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
+        /* Keep original feel: minimal styles; only add tiny helpers for new UI bits */
 
         html,
         body {
             height: 100%;
-        }
-
-        body {
             margin: 0;
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-            background: var(--bg);
-            color: var(--text);
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+            background: #111;
+            color: #ddd;
         }
 
         header {
-            display: grid;
-            grid-template-columns: 1fr auto auto;
+            display: flex;
             gap: 8px;
-            padding: 10px;
-            background: var(--panel);
             align-items: center;
-            border-bottom: 1px solid #262a33;
+            padding: 8px;
+            border-bottom: 1px solid #2a2a2a;
+            background: #1a1a1a;
         }
 
         header input[type="url"] {
-            width: 100%;
-            padding: 10px 12px;
-            background: #0b0c10;
-            color: var(--text);
-            border: 1px solid #2a2e38;
-            border-radius: 10px;
-            outline: none;
+            flex: 1;
+            padding: 8px;
+            background: #0d0d0d;
+            color: #ddd;
+            border: 1px solid #2a2a2a;
         }
 
         header button {
-            padding: 10px 14px;
-            background: var(--btn);
-            color: var(--text);
-            border: 1px solid #2a2e38;
-            border-radius: 10px;
+            padding: 8px 12px;
+            background: #222;
+            color: #ddd;
+            border: 1px solid #2a2a2a;
             cursor: pointer;
         }
 
-        header button:hover {
-            background: var(--btn-hover);
-        }
-
         #grid {
-            width: 100%;
-            height: 100%;
-            padding: 10px;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-            grid-auto-rows: minmax(220px, 1fr);
-            gap: 10px;
-            align-content: start;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 8px;
+            padding: 8px;
+            height: calc(100% - 50px);
             overflow: auto;
         }
 
         .tile {
             position: relative;
             background: #000;
-            border-radius: var(--radius);
-            overflow: hidden;
-            border: 1px solid #262a33;
+            border: 1px solid #2a2a2a;
+            min-height: 220px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -102,173 +68,83 @@
         video {
             width: 100%;
             height: 100%;
-            object-fit: contain;
-            background: #000;
             display: block;
+            background: #000;
+            object-fit: contain;
         }
 
+        /* Tiny control strip pinned at bottom; matches minimal aesthetic */
         .controls {
             position: absolute;
-            left: 8px;
-            right: 8px;
-            bottom: 8px;
+            left: 6px;
+            right: 6px;
+            bottom: 6px;
             display: flex;
-            gap: 8px;
+            gap: 6px;
             align-items: center;
             justify-content: space-between;
-            padding: 6px;
-            border-radius: 10px;
-            background: var(--overlay);
-            backdrop-filter: blur(4px);
+            background: rgba(0, 0, 0, 0.45);
+            border: 1px solid #2a2a2a;
+            padding: 4px 6px;
+            font-size: 12px;
         }
 
-        .left-controls,
-        .right-controls {
+        .controls .left,
+        .controls .right {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 12px;
-            padding: 6px 10px;
-            border-radius: 10px;
-            border: 1px solid #2a2e38;
-            background: var(--btn);
-            color: var(--text);
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .btn:hover {
-            background: var(--btn-hover);
-        }
-
-        .btn.danger {
-            border-color: #482323;
-            background: #261616;
-            color: #ffbdbd;
-        }
-
-        .btn.success {
-            border-color: #21483a;
-            background: #13261f;
-            color: #c6ffea;
-        }
-
-        .btn.small {
             padding: 4px 8px;
+            background: #1f1f1f;
+            border: 1px solid #2a2a2a;
+            color: #ddd;
+            cursor: pointer;
             font-size: 12px;
         }
 
-        .label {
-            font-size: 12px;
-            color: var(--muted);
-            padding: 0 4px;
-        }
-
-        /* Volume popover appears when hovering the mute/unmute button */
-        .volume-wrap {
-            position: relative;
-            display: inline-flex;
-            align-items: center;
-        }
-
-        .volume-pop {
-            position: absolute;
-            bottom: 120%;
-            left: 50%;
-            transform: translateX(-50%);
-            display: none;
-            padding: 8px 10px;
-            background: var(--overlay);
-            border: 1px solid #2a2e38;
-            border-radius: 10px;
-            backdrop-filter: blur(4px);
+        .tag {
+            color: #aaa;
+            font-size: 11px;
+            max-width: 40vw;
+            overflow: hidden;
+            text-overflow: ellipsis;
             white-space: nowrap;
         }
 
-        .volume-wrap:hover .volume-pop {
-            display: block;
-        }
-
-        .volume-pop input[type="range"] {
-            width: 140px;
-        }
-
-        /* CC menu (simple picker) */
-        .cc-wrap {
-            position: relative;
-        }
-
-        .cc-menu {
-            position: absolute;
-            bottom: 120%;
-            left: 0;
-            min-width: 180px;
-            background: var(--overlay);
-            border: 1px solid #2a2e38;
-            border-radius: 10px;
-            padding: 6px;
-            display: none;
-            z-index: 5;
-            backdrop-filter: blur(4px);
-        }
-
-        .cc-wrap.open .cc-menu {
-            display: block;
-        }
-
-        .cc-menu .cc-item {
-            padding: 6px 8px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-
-        .cc-menu .cc-item:hover {
-            background: var(--btn-hover);
-        }
-
-        /* Error overlay */
+        /* Error overlay (hidden by default) */
         .error-box {
             position: absolute;
-            top: 8px;
-            left: 8px;
-            right: 8px;
+            top: 6px;
+            left: 6px;
+            right: 6px;
             max-height: 40%;
             overflow: auto;
-            background: var(--overlay);
-            border: 1px solid #3a2a2a;
-            border-radius: 10px;
-            padding: 8px 10px;
-            color: #ffd7d7;
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            font-size: 12px;
             display: none;
+            background: rgba(32, 0, 0, 0.6);
+            border: 1px solid #5a2a2a;
+            color: #ffd0d0;
+            padding: 6px;
+            font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
         }
 
-        .error-box header {
+        .error-box .row {
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            padding: 0;
-            margin: 0 0 6px 0;
-            background: transparent;
-            border: none;
+            gap: 8px;
+            margin-bottom: 4px;
         }
 
-        .error-box .close {
-            background: transparent;
-            border: 1px solid #6b3940;
-            color: #ffd7d7;
+        .error-box button {
+            background: #2a0f12;
+            color: #ffd0d0;
+            border: 1px solid #5a2a2a;
+            font-size: 11px;
             padding: 2px 6px;
-            border-radius: 8px;
             cursor: pointer;
-            font-size: 12px;
         }
 
         .error-box pre {
@@ -277,26 +153,70 @@
             word-break: break-word;
         }
 
-        .url-tag {
-            font-size: 12px;
-            color: var(--muted);
+        /* Volume popover shown when hovering mute/unmute */
+        .vol-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
         }
 
-        .empty-hint {
-            opacity: 0.7;
-            font-size: 14px;
-            color: var(--muted);
+        .vol-pop {
             position: absolute;
+            bottom: 130%;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid #2a2a2a;
+            padding: 6px;
+            white-space: nowrap;
+        }
+
+        .vol-wrap:hover .vol-pop {
+            display: block;
+        }
+
+        .vol-pop input[type="range"] {
+            width: 140px;
+        }
+
+        /* CC simple dropdown */
+        .cc-wrap {
+            position: relative;
+        }
+
+        .cc-menu {
+            position: absolute;
+            bottom: 130%;
+            left: 0;
+            display: none;
+            min-width: 160px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid #2a2a2a;
+            padding: 4px;
+            z-index: 5;
+        }
+
+        .cc-wrap.open .cc-menu {
+            display: block;
+        }
+
+        .cc-item {
+            padding: 4px 6px;
+            cursor: pointer;
+        }
+
+        .cc-item:hover {
+            background: #252525;
         }
     </style>
 </head>
 
 <body>
-
     <header>
-        <input id="urlInput" type="url" placeholder="Enter HLS URL (m3u8) and press Add" />
-        <button id="addBtn" title="Add stream">Add</button>
-        <button id="clearBtn" title="Remove all streams">Clear All</button>
+        <button id="addBtn">Add</button>
+        <button id="clearBtn">Clear All</button>
+        <input id="urlInput" type="url" placeholder="Paste an HLS .m3u8 and press Add" />
     </header>
 
     <div id="grid" aria-live="polite"></div>
@@ -308,173 +228,115 @@
         const clearBtn = document.getElementById('clearBtn');
 
         addBtn.addEventListener('click', () => {
-            const url = urlInput.value.trim();
+            const url = (urlInput.value || '').trim();
             if (!url) return;
-            addStreamTile(url);
+            addTile(url);
             urlInput.value = '';
             urlInput.focus();
         });
         urlInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') addBtn.click();
         });
-        clearBtn.addEventListener('click', () => {
-            grid.innerHTML = '';
-        });
+        clearBtn.addEventListener('click', () => { grid.innerHTML = ''; });
 
-        function addStreamTile(url) {
+        function addTile(url) {
             const tile = document.createElement('div');
             tile.className = 'tile';
 
             const video = document.createElement('video');
             video.playsInline = true;
-            video.muted = true; // start muted for autoplay compatibility
             video.autoplay = true;
             video.controls = false;
+            video.muted = true; // start muted for autoplay
 
-            const emptyHint = document.createElement('div');
-            emptyHint.className = 'empty-hint';
-            emptyHint.textContent = 'Loading...';
-
-            const errorBox = document.createElement('div');
-            errorBox.className = 'error-box';
-            errorBox.innerHTML = `
-        <header>
-          <strong>Stream Errors</strong>
-          <button class="close" type="button">Close</button>
-        </header>
-        <pre></pre>
-      `;
-            const errorPre = errorBox.querySelector('pre');
-            errorBox.querySelector('.close').addEventListener('click', () => {
-                errorBox.style.display = 'none';
-            });
-
-            // Controls
             const controls = document.createElement('div');
             controls.className = 'controls';
-
             const left = document.createElement('div');
-            left.className = 'left-controls';
-
+            left.className = 'left';
             const right = document.createElement('div');
-            right.className = 'right-controls';
+            right.className = 'right';
 
-            // Mute / Unmute + Volume
-            const volumeWrap = document.createElement('div');
-            volumeWrap.className = 'volume-wrap';
-
+            // Mute/Unmute + Volume on hover
+            const volWrap = document.createElement('div');
+            volWrap.className = 'vol-wrap';
             const muteBtn = document.createElement('button');
-            muteBtn.className = 'btn small';
+            muteBtn.className = 'btn';
             muteBtn.textContent = 'Mute';
-
-            const volumePop = document.createElement('div');
-            volumePop.className = 'volume-pop';
-            volumePop.innerHTML = `
-        <div class="label">Volume</div>
-        <input type="range" min="0" max="1" step="0.05" value="0.8" />
-      `;
-
-            volumeWrap.appendChild(muteBtn);
-            volumeWrap.appendChild(volumePop);
-            left.appendChild(volumeWrap);
-
-            const volSlider = volumePop.querySelector('input[type="range"]');
+            const volPop = document.createElement('div');
+            volPop.className = 'vol-pop';
+            volPop.innerHTML = '<input type="range" min="0" max="1" step="0.05" value="0.8">';
+            const volSlider = volPop.querySelector('input');
             video.volume = parseFloat(volSlider.value);
             volSlider.addEventListener('input', () => {
                 video.volume = parseFloat(volSlider.value);
                 if (video.volume === 0 && !video.muted) {
                     video.muted = true;
                     muteBtn.textContent = 'Unmute';
-                } else if (video.volume > 0 && video.muted) {
-                    // Keep muted state unless user explicitly toggles
                 }
             });
-
             muteBtn.addEventListener('click', () => {
                 video.muted = !video.muted;
                 muteBtn.textContent = video.muted ? 'Unmute' : 'Mute';
             });
+            volWrap.appendChild(muteBtn);
+            volWrap.appendChild(volPop);
+            left.appendChild(volWrap);
 
-            // CC button + menu (default OFF)
+            // URL tag
+            const tag = document.createElement('div');
+            tag.className = 'tag';
+            tag.textContent = url;
+            left.appendChild(tag);
+
+            // CC controls (default OFF)
             const ccWrap = document.createElement('div');
             ccWrap.className = 'cc-wrap';
-
             const ccBtn = document.createElement('button');
-            ccBtn.className = 'btn small';
+            ccBtn.className = 'btn';
             ccBtn.textContent = 'CC: Off';
-
             const ccMenu = document.createElement('div');
             ccMenu.className = 'cc-menu';
-            // menu items populated later when tracks are known
-            // always include an "Off" item
-            function buildCcMenu(items) {
-                ccMenu.innerHTML = '';
-                const off = document.createElement('div');
-                off.className = 'cc-item';
-                off.textContent = 'Off';
-                off.addEventListener('click', () => {
-                    disableCaptions();
-                    ccBtn.textContent = 'CC: Off';
-                    ccWrap.classList.remove('open');
-                });
-                ccMenu.appendChild(off);
-                items.forEach((label, idx) => {
-                    const it = document.createElement('div');
-                    it.className = 'cc-item';
-                    it.textContent = label;
-                    it.addEventListener('click', () => {
-                        enableCaptionIndex(idx, label);
-                        ccWrap.classList.remove('open');
-                    });
-                    ccMenu.appendChild(it);
-                });
-            }
             ccWrap.appendChild(ccBtn);
             ccWrap.appendChild(ccMenu);
-            right.appendChild(ccWrap);
-
-            ccBtn.addEventListener('click', () => {
-                ccWrap.classList.toggle('open');
-            });
+            ccBtn.addEventListener('click', () => ccWrap.classList.toggle('open'));
             document.addEventListener('click', (e) => {
                 if (!ccWrap.contains(e.target)) ccWrap.classList.remove('open');
             });
+            right.appendChild(ccWrap);
 
             // Remove tile
-            const removeBtn = document.createElement('button');
-            removeBtn.className = 'btn small danger';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => {
-                if (hls) {
-                    try { hls.destroy(); } catch (_) { }
-                }
+            const rm = document.createElement('button');
+            rm.className = 'btn';
+            rm.textContent = 'Remove';
+            rm.addEventListener('click', () => {
+                if (hls) { try { hls.destroy(); } catch (e) { } }
                 tile.remove();
             });
-            right.appendChild(removeBtn);
-
-            // URL tag
-            const urlTag = document.createElement('div');
-            urlTag.className = 'label url-tag';
-            urlTag.textContent = url;
-            left.appendChild(urlTag);
+            right.appendChild(rm);
 
             controls.appendChild(left);
             controls.appendChild(right);
 
+            // Error box
+            const err = document.createElement('div');
+            err.className = 'error-box';
+            err.innerHTML = '<div class="row"><strong>Stream Errors</strong><button type="button" data-close>Close</button></div><pre></pre>';
+            const errPre = err.querySelector('pre');
+            err.querySelector('[data-close]').addEventListener('click', () => { err.style.display = 'none'; });
+
             tile.appendChild(video);
             tile.appendChild(controls);
-            tile.appendChild(errorBox);
-            tile.appendChild(emptyHint);
+            tile.appendChild(err);
             grid.appendChild(tile);
 
-            // HLS wiring
+            // HLS plumbing
             let hls = null;
             let usingNative = false;
 
-            function logError(msg) {
+            function logError(message) {
                 const ts = new Date().toLocaleTimeString();
-                errorPre.textContent += `[${ts}] ${msg}\n`;
-                errorBox.style.display = 'block';
+                errPre.textContent += '[' + ts + '] ' + message + '\n';
+                err.style.display = 'block';
             }
 
             if (Hls.isSupported()) {
@@ -482,30 +344,21 @@
                     enableWorker: true,
                     lowLatencyMode: true,
                     backBufferLength: 60,
-                    renderTextTracksNatively: false // manage subtitles via API
+                    renderTextTracksNatively: false
                 });
                 hls.attachMedia(video);
-                hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-                    hls.loadSource(url);
-                });
-                hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
-                    emptyHint.remove();
+                hls.on(Hls.Events.MEDIA_ATTACHED, () => { hls.loadSource(url); });
+
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
                     // Captions default OFF
-                    if (Array.isArray(hls.subtitleTracks) && hls.subtitleTracks.length > 0) {
-                        hls.subtitleDisplay = false;
-                        hls.subtitleTrack = -1; // off
-                        const labels = hls.subtitleTracks.map(t => t.name || t.lang || 'Subtitles');
-                        buildCcMenu(labels);
-                    } else {
-                        buildCcMenu([]); // only Off
-                    }
-                    video.play().catch(() => {/* autoplay may be blocked until user gesture */ });
+                    setupHlsCaptionsMenu(hls, ccMenu, ccBtn);
+                    video.play().catch(() => { });
                 });
 
-                // Show non-fatal/fatal errors in the tile
+                // Error reporting (non-fatal & fatal)
                 hls.on(Hls.Events.ERROR, (_, data) => {
                     const { type, details, fatal } = data;
-                    logError(`${fatal ? 'FATAL' : 'ERROR'} [${type}] ${details || ''}`);
+                    logError((fatal ? 'FATAL ' : '') + type + (details ? ' - ' + details : ''));
                     if (fatal) {
                         switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
@@ -515,7 +368,7 @@
                                 hls.recoverMediaError();
                                 break;
                             default:
-                                try { hls.destroy(); } catch (_) { }
+                                try { hls.destroy(); } catch (e) { }
                                 break;
                         }
                     }
@@ -525,79 +378,100 @@
                 usingNative = true;
                 video.src = url;
                 video.addEventListener('loadedmetadata', () => {
-                    emptyHint.remove();
-                    // Default all text tracks OFF
+                    // Default all native text tracks OFF
                     const tracks = Array.from(video.textTracks || []);
                     tracks.forEach(t => t.mode = 'disabled');
-                    const labels = tracks
-                        .filter(t => (t.kind === 'subtitles' || t.kind === 'captions'))
-                        .map(t => t.label || t.language || 'Subtitles');
-                    buildCcMenu(labels);
+                    setupNativeCaptionsMenu(video, ccMenu, ccBtn);
                 });
                 video.addEventListener('error', () => {
-                    const mediaErr = video.error;
-                    logError(`MEDIA ${mediaErr ? mediaErr.message || mediaErr.code : 'unknown'} (native)`);
+                    const me = video.error;
+                    logError('MEDIA ' + (me ? (me.message || me.code) : 'unknown') + ' (native)');
                 });
                 video.play().catch(() => { });
             } else {
-                emptyHint.textContent = 'HLS not supported on this browser.';
-                logError('Hls.js not supported and no native HLS available.');
+                logError('HLS not supported on this browser.');
             }
+        }
 
-            // CC helpers
-            function disableCaptions() {
-                if (hls) {
-                    hls.subtitleDisplay = false;
-                    hls.subtitleTrack = -1;
-                }
-                if (usingNative) {
-                    const tracks = Array.from(video.textTracks || []);
-                    tracks.forEach(t => {
-                        if (t.kind === 'subtitles' || t.kind === 'captions') t.mode = 'disabled';
-                    });
-                }
-                ccBtn.textContent = 'CC: Off';
-            }
+        function setupHlsCaptionsMenu(hls, menu, btn) {
+            // Build menu with Off + available subtitleTracks (if any)
+            const tracks = Array.isArray(hls.subtitleTracks) ? hls.subtitleTracks : [];
+            hls.subtitleDisplay = false;
+            hls.subtitleTrack = -1;
 
-            function enableCaptionIndex(index, label) {
-                if (hls && Array.isArray(hls.subtitleTracks) && hls.subtitleTracks.length > 0) {
-                    // Guard index
-                    if (index >= 0 && index < hls.subtitleTracks.length) {
-                        hls.subtitleDisplay = true;
-                        hls.subtitleTrack = index;
-                        ccBtn.textContent = `CC: ${label}`;
-                    }
-                    return;
-                }
-                if (usingNative) {
-                    const tracks = Array.from(video.textTracks || [])
-                        .filter(t => t.kind === 'subtitles' || t.kind === 'captions');
-                    tracks.forEach((t, i) => {
-                        t.mode = (i === index) ? 'showing' : 'disabled';
-                    });
-                    ccBtn.textContent = `CC: ${label}`;
-                }
-            }
+            menu.innerHTML = '';
+            const off = document.createElement('div');
+            off.className = 'cc-item';
+            off.textContent = 'Off';
+            off.addEventListener('click', () => {
+                hls.subtitleDisplay = false;
+                hls.subtitleTrack = -1;
+                btn.textContent = 'CC: Off';
+                menu.parentElement.classList.remove('open');
+            });
+            menu.appendChild(off);
 
-            // In case subtitle tracks appear later (some streams add them dynamically)
-            video.addEventListener('addtrack', () => {
-                if (usingNative) {
-                    const tracks = Array.from(video.textTracks || [])
-                        .filter(t => t.kind === 'subtitles' || t.kind === 'captions');
-                    tracks.forEach(t => t.mode = 'disabled');
-                    const labels = tracks.map(t => t.label || t.language || 'Subtitles');
-                    buildCcMenu(labels);
-                }
+            tracks.forEach((t, i) => {
+                const lab = t.name || t.lang || 'Subtitles';
+                const it = document.createElement('div');
+                it.className = 'cc-item';
+                it.textContent = lab;
+                it.addEventListener('click', () => {
+                    hls.subtitleDisplay = true;
+                    hls.subtitleTrack = i;
+                    btn.textContent = 'CC: ' + lab;
+                    menu.parentElement.classList.remove('open');
+                });
+                menu.appendChild(it);
+            });
+
+            // In case tracks appear later
+            hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
+                setupHlsCaptionsMenu(hls, menu, btn);
             });
         }
 
-        // Optional: add an example URL via hash for quick testing
-        // Example: multiviewer.html#https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+        function setupNativeCaptionsMenu(video, menu, btn) {
+            const textTracks = Array.from(video.textTracks || [])
+                .filter(t => t.kind === 'subtitles' || t.kind === 'captions');
+
+            textTracks.forEach(t => t.mode = 'disabled');
+            menu.innerHTML = '';
+
+            const off = document.createElement('div');
+            off.className = 'cc-item';
+            off.textContent = 'Off';
+            off.addEventListener('click', () => {
+                textTracks.forEach(t => t.mode = 'disabled');
+                btn.textContent = 'CC: Off';
+                menu.parentElement.classList.remove('open');
+            });
+            menu.appendChild(off);
+
+            textTracks.forEach((t, i) => {
+                const lab = t.label || t.language || 'Subtitles';
+                const it = document.createElement('div');
+                it.className = 'cc-item';
+                it.textContent = lab;
+                it.addEventListener('click', () => {
+                    textTracks.forEach((tt, j) => { tt.mode = (i === j) ? 'showing' : 'disabled'; });
+                    btn.textContent = 'CC: ' + lab;
+                    menu.parentElement.classList.remove('open');
+                });
+                menu.appendChild(it);
+            });
+
+            // If tracks added later
+            video.textTracks && (video.textTracks.onaddtrack = () => {
+                setupNativeCaptionsMenu(video, menu, btn);
+            });
+        }
+
+        // Optional: allow quick test via hash
+        // multiviewer.html#https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
         window.addEventListener('DOMContentLoaded', () => {
             const h = decodeURIComponent(location.hash.replace(/^#/, '')).trim();
-            if (h && /^https?:\/\/.+/.test(h)) {
-                addStreamTile(h);
-            }
+            if (h && /^https?:\/\/.+/.test(h)) addTile(h);
         });
     </script>
 </body>
