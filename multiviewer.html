@@ -1,421 +1,604 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 
 <head>
     <meta charset="utf-8" />
     <title>Multi HLS Viewer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet" />
+
+    <!-- Hls.js (latest) -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
     <style>
         :root {
-            --bg: #0c0f14;
-            --panel: #12161d;
-            --text: #e7edf5;
-            --muted: #9aa6b2;
-            --gap: 10px;
+            --bg: #0e0f12;
+            --panel: #15171c;
+            --text: #e7e7ea;
+            --muted: #a9a9b2;
+            --accent: #3b82f6;
+            --danger: #ef4444;
+            --ok: #10b981;
+            --btn: #1f232b;
+            --btn-hover: #2b3140;
+            --overlay: rgba(0, 0, 0, 0.55);
+            --radius: 14px;
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         html,
         body {
             height: 100%;
-            width: 100%;
+        }
+
+        body {
             margin: 0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
             background: var(--bg);
             color: var(--text);
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial;
-            overflow: hidden
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
-        .wrap {
-            box-sizing: border-box;
-            width: 100vw;
-            height: 100vh;
-            padding: 6px;
-            display: grid;
-            grid-template-rows: auto 1fr;
-            gap: 6px
-        }
-
-        .toolbar {
-            background: var(--panel);
-            border: 1px solid #1e2430;
-            padding: 4px 6px;
+        header {
             display: grid;
             grid-template-columns: 1fr auto auto;
-            gap: 6px;
+            gap: 8px;
+            padding: 10px;
+            background: var(--panel);
             align-items: center;
-            height: 42px;
-            min-height: 42px;
-            max-height: 42px
+            border-bottom: 1px solid #262a33;
         }
 
-        #urlInput {
+        header input[type="url"] {
             width: 100%;
-            height: 100%;
-            padding: 6px 8px;
-            font-size: 14px;
-            background: #0f141b;
+            padding: 10px 12px;
+            background: #0b0c10;
             color: var(--text);
-            border: 1px solid #1e2430;
-            border-radius: 0;
-            box-sizing: border-box
+            border: 1px solid #2a2e38;
+            border-radius: 10px;
+            outline: none;
         }
 
-        button {
-            padding: 4px 10px;
-            font-size: 13px;
-            height: 100%;
-            border: 1px solid #1e2430;
-            background: linear-gradient(180deg, #18202b, #131a24);
+        header button {
+            padding: 10px 14px;
+            background: var(--btn);
             color: var(--text);
-            border-radius: 0;
+            border: 1px solid #2a2e38;
+            border-radius: 10px;
             cursor: pointer;
-            white-space: nowrap
         }
 
-        button:hover {
-            background: linear-gradient(180deg, #1b2431, #161e29)
+        header button:hover {
+            background: var(--btn-hover);
         }
 
-        button:active {
-            transform: translateY(1px)
-        }
-
-        .grid {
-            position: relative;
+        #grid {
             width: 100%;
             height: 100%;
+            padding: 10px;
             display: grid;
-            gap: var(--gap);
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            grid-auto-rows: minmax(220px, 1fr);
+            gap: 10px;
             align-content: start;
-            overflow: hidden
+            overflow: auto;
         }
 
         .tile {
             position: relative;
             background: #000;
-            border: 1px solid #161c26;
-            border-radius: 0;
-            aspect-ratio: 16/9;
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid #262a33;
             display: flex;
             align-items: center;
             justify-content: center;
-            isolation: isolate
         }
 
-        .tile video {
+        video {
             width: 100%;
             height: 100%;
             object-fit: contain;
             background: #000;
             display: block;
-            border-radius: 0
         }
 
-        .hover-actions {
+        .controls {
             position: absolute;
-            right: 6px;
-            top: 6px;
+            left: 8px;
+            right: 8px;
+            bottom: 8px;
             display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px;
+            border-radius: 10px;
+            background: var(--overlay);
+            backdrop-filter: blur(4px);
+        }
+
+        .left-controls,
+        .right-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
             gap: 6px;
-            z-index: 4;
-            opacity: 0;
-            transform: translateY(-4px);
-            transition: opacity 120ms ease, transform 120ms ease
-        }
-
-        .tile:hover .hover-actions {
-            opacity: 1;
-            transform: translateY(0)
-        }
-
-        .icon-btn {
-            width: 32px;
-            height: 32px;
-            border-radius: 0;
-            display: grid;
-            place-items: center;
-            background: rgba(0, 0, 0, 0.55);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 12px;
+            padding: 6px 10px;
+            border-radius: 10px;
+            border: 1px solid #2a2e38;
+            background: var(--btn);
+            color: var(--text);
             cursor: pointer;
-            color: #e7edf5;
-            font-size: 18px;
-            line-height: 1
+            user-select: none;
         }
 
-        .icon-btn:hover {
-            background: rgba(255, 255, 255, 0.12)
+        .btn:hover {
+            background: var(--btn-hover);
         }
 
-        .empty {
+        .btn.danger {
+            border-color: #482323;
+            background: #261616;
+            color: #ffbdbd;
+        }
+
+        .btn.success {
+            border-color: #21483a;
+            background: #13261f;
+            color: #c6ffea;
+        }
+
+        .btn.small {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .label {
+            font-size: 12px;
             color: var(--muted);
-            text-align: center;
-            padding: 10px;
-            border: 1px dashed #1e2430;
-            background: #0c1118;
-            align-self: center;
-            justify-self: center
+            padding: 0 4px;
         }
 
-        video::-webkit-media-controls {
-            display: none !important
+        /* Volume popover appears when hovering the mute/unmute button */
+        .volume-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .volume-pop {
+            position: absolute;
+            bottom: 120%;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            padding: 8px 10px;
+            background: var(--overlay);
+            border: 1px solid #2a2e38;
+            border-radius: 10px;
+            backdrop-filter: blur(4px);
+            white-space: nowrap;
+        }
+
+        .volume-wrap:hover .volume-pop {
+            display: block;
+        }
+
+        .volume-pop input[type="range"] {
+            width: 140px;
+        }
+
+        /* CC menu (simple picker) */
+        .cc-wrap {
+            position: relative;
+        }
+
+        .cc-menu {
+            position: absolute;
+            bottom: 120%;
+            left: 0;
+            min-width: 180px;
+            background: var(--overlay);
+            border: 1px solid #2a2e38;
+            border-radius: 10px;
+            padding: 6px;
+            display: none;
+            z-index: 5;
+            backdrop-filter: blur(4px);
+        }
+
+        .cc-wrap.open .cc-menu {
+            display: block;
+        }
+
+        .cc-menu .cc-item {
+            padding: 6px 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .cc-menu .cc-item:hover {
+            background: var(--btn-hover);
+        }
+
+        /* Error overlay */
+        .error-box {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            right: 8px;
+            max-height: 40%;
+            overflow: auto;
+            background: var(--overlay);
+            border: 1px solid #3a2a2a;
+            border-radius: 10px;
+            padding: 8px 10px;
+            color: #ffd7d7;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 12px;
+            display: none;
+        }
+
+        .error-box header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0;
+            margin: 0 0 6px 0;
+            background: transparent;
+            border: none;
+        }
+
+        .error-box .close {
+            background: transparent;
+            border: 1px solid #6b3940;
+            color: #ffd7d7;
+            padding: 2px 6px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .error-box pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .url-tag {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .empty-hint {
+            opacity: 0.7;
+            font-size: 14px;
+            color: var(--muted);
+            position: absolute;
         }
     </style>
 </head>
 
 <body>
-    <div class="wrap">
-        <div class="toolbar" id="toolbar">
-            <input id="urlInput" type="text" placeholder="Paste .m3u8 URL(s), separated by space/comma" />
-            <button id="addBtn" title="Add all URLs">Add</button>
-            <button id="clearBtn" title="Remove all streams">Clear All</button>
-        </div>
-        <div id="grid" class="grid" aria-live="polite"></div>
-    </div>
+
+    <header>
+        <input id="urlInput" type="url" placeholder="Enter HLS URL (m3u8) and press Add" />
+        <button id="addBtn" title="Add stream">Add</button>
+        <button id="clearBtn" title="Remove all streams">Clear All</button>
+    </header>
+
+    <div id="grid" aria-live="polite"></div>
 
     <script>
-        const LS_KEY = 'multiHlsUrls';
-        const players = new Map(); // id -> { hls, video, url, tile, backoffMs, lastTime, healthTimer, needsHeal }
-        const streamUrls = [];     // duplicates allowed
-
         const grid = document.getElementById('grid');
-        const input = document.getElementById('urlInput');
+        const urlInput = document.getElementById('urlInput');
         const addBtn = document.getElementById('addBtn');
         const clearBtn = document.getElementById('clearBtn');
-        const toolbar = document.getElementById('toolbar');
 
         addBtn.addEventListener('click', () => {
-            const raw = input.value.trim(); if (!raw) return;
-            const urls = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
-            addUrls(urls); input.value = '';
+            const url = urlInput.value.trim();
+            if (!url) return;
+            addStreamTile(url);
+            urlInput.value = '';
+            urlInput.focus();
         });
-        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); } });
-        clearBtn.addEventListener('click', () => { removeAllTiles(); saveList(); layoutGrid(); });
-
-        function addUrls(urls) {
-            let added = 0;
-            urls.forEach(u => { if (!u) return; streamUrls.push(u); addStreamTile(u); added++; });
-            if (added > 0) { saveList(); layoutGrid(); }
-            updateEmptyState();
-        }
-        function saveList() { try { localStorage.setItem(LS_KEY, JSON.stringify(streamUrls)); } catch { } }
-        function loadList() { try { const raw = localStorage.getItem(LS_KEY); if (!raw) return []; const arr = JSON.parse(raw); return Array.isArray(arr) ? arr.filter(Boolean) : []; } catch { return []; } }
-
-        function updateEmptyState() {
-            if ([...grid.children].every(el => !el.classList.contains('tile'))) {
-                const div = document.createElement('div'); div.className = 'empty'; div.textContent = 'No streams yet.'; grid.appendChild(div);
-            } else { const first = grid.querySelector('.empty'); if (first) first.remove(); }
-        }
+        urlInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') addBtn.click();
+        });
+        clearBtn.addEventListener('click', () => {
+            grid.innerHTML = '';
+        });
 
         function addStreamTile(url) {
-            const placeholder = grid.querySelector('.empty'); if (placeholder) placeholder.remove();
+            const tile = document.createElement('div');
+            tile.className = 'tile';
 
-            const tile = document.createElement('div'); tile.className = 'tile'; tile.tabIndex = 0;
             const video = document.createElement('video');
-            video.setAttribute('playsinline', ''); video.setAttribute('muted', ''); video.muted = true; video.autoplay = true; video.controls = false; video.preload = 'auto';
+            video.playsInline = true;
+            video.muted = true; // start muted for autoplay compatibility
+            video.autoplay = true;
+            video.controls = false;
 
-            const actions = document.createElement('div'); actions.className = 'hover-actions';
-            actions.innerHTML = `
-        <div class="icon-btn" title="Open stream URL in a new tab" data-action="open"><i class="ri-external-link-line"></i></div>
-        <div class="icon-btn" title="Refresh stream" data-action="refresh"><i class="ri-refresh-line"></i></div>
-        <div class="icon-btn" title="Unmute" data-action="mute"><i class="ri-volume-mute-line"></i></div>
-        <div class="icon-btn" title="Remove stream" data-action="close"><i class="ri-close-line"></i></div>
+            const emptyHint = document.createElement('div');
+            emptyHint.className = 'empty-hint';
+            emptyHint.textContent = 'Loading...';
+
+            const errorBox = document.createElement('div');
+            errorBox.className = 'error-box';
+            errorBox.innerHTML = `
+        <header>
+          <strong>Stream Errors</strong>
+          <button class="close" type="button">Close</button>
+        </header>
+        <pre></pre>
       `;
-            tile.appendChild(video); tile.appendChild(actions); grid.appendChild(tile);
+            const errorPre = errorBox.querySelector('pre');
+            errorBox.querySelector('.close').addEventListener('click', () => {
+                errorBox.style.display = 'none';
+            });
 
-            tile.addEventListener('dblclick', () => { if (!document.fullscreenElement) tile.requestFullscreen?.(); else document.exitFullscreen?.(); });
+            // Controls
+            const controls = document.createElement('div');
+            controls.className = 'controls';
 
-            actions.addEventListener('click', (e) => {
-                const btn = e.target.closest('.icon-btn'); if (!btn) return;
-                const action = btn.getAttribute('data-action');
-                if (action === 'open') { window.open(url, '_blank', 'noopener'); }
-                else if (action === 'close') { destroyTile(tile, url); saveList(); layoutGrid(); }
-                else if (action === 'refresh') { const rec = getRecByTile(tile); if (rec) hardRefresh(rec); }
-                else if (action === 'mute') {
-                    video.muted = !video.muted;
-                    if (video.muted) { btn.title = 'Unmute'; btn.firstElementChild.className = 'ri-volume-mute-line'; }
-                    else { btn.title = 'Mute'; btn.firstElementChild.className = 'ri-volume-up-line'; video.play().catch(() => { }); }
+            const left = document.createElement('div');
+            left.className = 'left-controls';
+
+            const right = document.createElement('div');
+            right.className = 'right-controls';
+
+            // Mute / Unmute + Volume
+            const volumeWrap = document.createElement('div');
+            volumeWrap.className = 'volume-wrap';
+
+            const muteBtn = document.createElement('button');
+            muteBtn.className = 'btn small';
+            muteBtn.textContent = 'Mute';
+
+            const volumePop = document.createElement('div');
+            volumePop.className = 'volume-pop';
+            volumePop.innerHTML = `
+        <div class="label">Volume</div>
+        <input type="range" min="0" max="1" step="0.05" value="0.8" />
+      `;
+
+            volumeWrap.appendChild(muteBtn);
+            volumeWrap.appendChild(volumePop);
+            left.appendChild(volumeWrap);
+
+            const volSlider = volumePop.querySelector('input[type="range"]');
+            video.volume = parseFloat(volSlider.value);
+            volSlider.addEventListener('input', () => {
+                video.volume = parseFloat(volSlider.value);
+                if (video.volume === 0 && !video.muted) {
+                    video.muted = true;
+                    muteBtn.textContent = 'Unmute';
+                } else if (video.volume > 0 && video.muted) {
+                    // Keep muted state unless user explicitly toggles
                 }
             });
 
-            const id = crypto.randomUUID();
-            const rec = { hls: null, video, url, tile, backoffMs: 0, lastTime: 0, healthTimer: null, needsHeal: false };
-            players.set(id, rec);
+            muteBtn.addEventListener('click', () => {
+                video.muted = !video.muted;
+                muteBtn.textContent = video.muted ? 'Unmute' : 'Mute';
+            });
 
-            setupPlayer(rec);
-            startHealthCheck(rec);
-            layoutGrid();
-        }
+            // CC button + menu (default OFF)
+            const ccWrap = document.createElement('div');
+            ccWrap.className = 'cc-wrap';
 
-        function setupPlayer(rec) {
-            const { video, url } = rec;
-            if (rec.hls) { try { rec.hls.destroy(); } catch { } rec.hls = null; }
-            video.src = ''; video.load();
+            const ccBtn = document.createElement('button');
+            ccBtn.className = 'btn small';
+            ccBtn.textContent = 'CC: Off';
 
-            const ensurePlay = () => { const p = video.play(); if (p && typeof p.then === 'function') { p.catch(() => { const resume = () => { video.play().finally(() => window.removeEventListener('pointerdown', resume)); }; window.addEventListener('pointerdown', resume, { once: true }); }); } };
-
-            if (window.Hls && Hls.isSupported()) {
-                const hls = new Hls({ maxLiveSyncPlaybackRate: 1.5, enableWorker: true, lowLatencyMode: true, backBufferLength: 30, capLevelToPlayerSize: false });
-                rec.hls = hls;
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(url));
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    if (hls.levels && hls.levels.length > 0) { const top = hls.levels.length - 1; hls.nextLevel = top; hls.currentLevel = top; hls.loadLevel = top; }
-                    resetBackoff(rec); ensurePlay();
+            const ccMenu = document.createElement('div');
+            ccMenu.className = 'cc-menu';
+            // menu items populated later when tracks are known
+            // always include an "Off" item
+            function buildCcMenu(items) {
+                ccMenu.innerHTML = '';
+                const off = document.createElement('div');
+                off.className = 'cc-item';
+                off.textContent = 'Off';
+                off.addEventListener('click', () => {
+                    disableCaptions();
+                    ccBtn.textContent = 'CC: Off';
+                    ccWrap.classList.remove('open');
                 });
-                hls.on(Hls.Events.LEVEL_LOADED, () => { if (hls.levels && hls.levels.length > 0) { const top = hls.levels.length - 1; if (hls.currentLevel !== top) hls.currentLevel = top; } });
-                hls.on(Hls.Events.ERROR, (_, data) => {
-                    if (data.fatal) {
-                        // If hidden, queue a soft heal instead of reconnecting now
-                        if (document.hidden) { rec.needsHeal = true; return; }
-                        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { try { hls.recoverMediaError(); } catch { } scheduleReconnect(rec); }
-                        else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { scheduleReconnect(rec); }
-                        else { scheduleReconnect(rec); }
+                ccMenu.appendChild(off);
+                items.forEach((label, idx) => {
+                    const it = document.createElement('div');
+                    it.className = 'cc-item';
+                    it.textContent = label;
+                    it.addEventListener('click', () => {
+                        enableCaptionIndex(idx, label);
+                        ccWrap.classList.remove('open');
+                    });
+                    ccMenu.appendChild(it);
+                });
+            }
+            ccWrap.appendChild(ccBtn);
+            ccWrap.appendChild(ccMenu);
+            right.appendChild(ccWrap);
+
+            ccBtn.addEventListener('click', () => {
+                ccWrap.classList.toggle('open');
+            });
+            document.addEventListener('click', (e) => {
+                if (!ccWrap.contains(e.target)) ccWrap.classList.remove('open');
+            });
+
+            // Remove tile
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'btn small danger';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => {
+                if (hls) {
+                    try { hls.destroy(); } catch (_) { }
+                }
+                tile.remove();
+            });
+            right.appendChild(removeBtn);
+
+            // URL tag
+            const urlTag = document.createElement('div');
+            urlTag.className = 'label url-tag';
+            urlTag.textContent = url;
+            left.appendChild(urlTag);
+
+            controls.appendChild(left);
+            controls.appendChild(right);
+
+            tile.appendChild(video);
+            tile.appendChild(controls);
+            tile.appendChild(errorBox);
+            tile.appendChild(emptyHint);
+            grid.appendChild(tile);
+
+            // HLS wiring
+            let hls = null;
+            let usingNative = false;
+
+            function logError(msg) {
+                const ts = new Date().toLocaleTimeString();
+                errorPre.textContent += `[${ts}] ${msg}\n`;
+                errorBox.style.display = 'block';
+            }
+
+            if (Hls.isSupported()) {
+                hls = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    backBufferLength: 60,
+                    renderTextTracksNatively: false // manage subtitles via API
+                });
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                    hls.loadSource(url);
+                });
+                hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+                    emptyHint.remove();
+                    // Captions default OFF
+                    if (Array.isArray(hls.subtitleTracks) && hls.subtitleTracks.length > 0) {
+                        hls.subtitleDisplay = false;
+                        hls.subtitleTrack = -1; // off
+                        const labels = hls.subtitleTracks.map(t => t.name || t.lang || 'Subtitles');
+                        buildCcMenu(labels);
                     } else {
-                        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR || data.details === Hls.ErrorDetails.INTERNAL_EXCEPTION) {
-                            if (document.hidden) { rec.needsHeal = true; return; }
-                            scheduleReconnect(rec);
+                        buildCcMenu([]); // only Off
+                    }
+                    video.play().catch(() => {/* autoplay may be blocked until user gesture */ });
+                });
+
+                // Show non-fatal/fatal errors in the tile
+                hls.on(Hls.Events.ERROR, (_, data) => {
+                    const { type, details, fatal } = data;
+                    logError(`${fatal ? 'FATAL' : 'ERROR'} [${type}] ${details || ''}`);
+                    if (fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                hls.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                hls.recoverMediaError();
+                                break;
+                            default:
+                                try { hls.destroy(); } catch (_) { }
+                                break;
                         }
                     }
                 });
+
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                usingNative = true;
                 video.src = url;
-                video.addEventListener('loadedmetadata', () => { resetBackoff(rec); ensurePlay(); }, { once: true });
-            } else { showUnsupported(rec.tile); }
-        }
-
-        function hardRefresh(rec) {
-            try {
-                if (rec.hls) {
-                    rec.hls.stopLoad(); rec.hls.detachMedia(); rec.hls.attachMedia(rec.video); rec.hls.loadSource(rec.url);
-                } else {
-                    rec.video.pause();
-                    const u = new URL(rec.url, window.location.href); u.searchParams.set('_ts', Date.now().toString());
-                    rec.video.src = ''; rec.video.load(); rec.video.src = u.toString(); rec.video.play().catch(() => { });
-                }
-            } catch { setupPlayer(rec); }
-        }
-
-        function showUnsupported(tile) {
-            const msg = document.createElement('div'); msg.style.position = 'absolute'; msg.style.inset = '0'; msg.style.display = 'grid'; msg.style.placeItems = 'center';
-            msg.style.background = 'linear-gradient(180deg,#0a0f15,#0c121a)'; msg.style.color = '#ffb4b4'; msg.style.fontSize = '14px'; msg.style.padding = '12px';
-            msg.textContent = 'HLS not supported in this browser.'; tile.appendChild(msg);
-        }
-
-        function resetBackoff(rec) { rec.backoffMs = 0; }
-
-        // Do NOT reconnect while hidden; queue a soft heal instead
-        function scheduleReconnect(rec) {
-            if (document.hidden) { rec.needsHeal = true; return; }
-            rec.backoffMs = rec.backoffMs ? Math.min(rec.backoffMs * 2, 30000) : 1000;
-            clearTimeout(rec._reconnectTimer);
-            rec._reconnectTimer = setTimeout(() => softHeal(rec), rec.backoffMs);
-        }
-
-        // Soft heal: try to resume without reloading the source
-        function softHeal(rec) {
-            try {
-                if (rec.hls) {
-                    // Don’t stop/detach; just nudge loader/decoder
-                    rec.hls.startLoad();
-                    try { rec.hls.recoverMediaError(); } catch { }
-                }
-                rec.video.play().catch(() => { });
-                resetBackoff(rec);
-            } catch {
-                // As a last resort, rebuild
-                setupPlayer(rec);
+                video.addEventListener('loadedmetadata', () => {
+                    emptyHint.remove();
+                    // Default all text tracks OFF
+                    const tracks = Array.from(video.textTracks || []);
+                    tracks.forEach(t => t.mode = 'disabled');
+                    const labels = tracks
+                        .filter(t => (t.kind === 'subtitles' || t.kind === 'captions'))
+                        .map(t => t.label || t.language || 'Subtitles');
+                    buildCcMenu(labels);
+                });
+                video.addEventListener('error', () => {
+                    const mediaErr = video.error;
+                    logError(`MEDIA ${mediaErr ? mediaErr.message || mediaErr.code : 'unknown'} (native)`);
+                });
+                video.play().catch(() => { });
+            } else {
+                emptyHint.textContent = 'HLS not supported on this browser.';
+                logError('Hls.js not supported and no native HLS available.');
             }
-        }
 
-        function startHealthCheck(rec) {
-            rec.lastTime = 0;
-            rec.healthTimer = setInterval(() => {
-                if (document.hidden) return; // skip checks while hidden
-                const v = rec.video; if (!v || v.readyState === 0) return;
-                const now = v.currentTime;
-                if (!v.paused && Math.abs(now - rec.lastTime) < 0.1) { scheduleReconnect(rec); }
-                rec.lastTime = now;
-            }, 10000);
-        }
-        function stopHealthCheck(rec) { if (rec.healthTimer) clearInterval(rec.healthTimer); rec.healthTimer = null; }
+            // CC helpers
+            function disableCaptions() {
+                if (hls) {
+                    hls.subtitleDisplay = false;
+                    hls.subtitleTrack = -1;
+                }
+                if (usingNative) {
+                    const tracks = Array.from(video.textTracks || []);
+                    tracks.forEach(t => {
+                        if (t.kind === 'subtitles' || t.kind === 'captions') t.mode = 'disabled';
+                    });
+                }
+                ccBtn.textContent = 'CC: Off';
+            }
 
-        // On visibility return, apply queued soft heals; do not reload sources
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) {
-                for (const [, rec] of players.entries()) {
-                    if (rec.needsHeal) {
-                        rec.needsHeal = false;
-                        softHeal(rec);
-                    } else {
-                        // Even if not queued, some browsers auto-pause; just try to resume
-                        rec.video.play().catch(() => { });
+            function enableCaptionIndex(index, label) {
+                if (hls && Array.isArray(hls.subtitleTracks) && hls.subtitleTracks.length > 0) {
+                    // Guard index
+                    if (index >= 0 && index < hls.subtitleTracks.length) {
+                        hls.subtitleDisplay = true;
+                        hls.subtitleTrack = index;
+                        ccBtn.textContent = `CC: ${label}`;
                     }
+                    return;
+                }
+                if (usingNative) {
+                    const tracks = Array.from(video.textTracks || [])
+                        .filter(t => t.kind === 'subtitles' || t.kind === 'captions');
+                    tracks.forEach((t, i) => {
+                        t.mode = (i === index) ? 'showing' : 'disabled';
+                    });
+                    ccBtn.textContent = `CC: ${label}`;
                 }
             }
-        });
 
-        // Only heal on actual network change (softly)
-        window.addEventListener('online', () => {
-            for (const [, rec] of players.entries()) {
-                setTimeout(() => { softHeal(rec); }, Math.floor(Math.random() * 500));
-            }
-        });
-
-        function destroyTile(el, url) {
-            for (const [key, rec] of players.entries()) {
-                if (rec.tile === el) {
-                    try { stopHealthCheck(rec); clearTimeout(rec._reconnectTimer); if (rec.hls) rec.hls.destroy(); rec.video.pause(); rec.video.src = ''; rec.video.load(); } catch { }
-                    players.delete(key); break;
+            // In case subtitle tracks appear later (some streams add them dynamically)
+            video.addEventListener('addtrack', () => {
+                if (usingNative) {
+                    const tracks = Array.from(video.textTracks || [])
+                        .filter(t => t.kind === 'subtitles' || t.kind === 'captions');
+                    tracks.forEach(t => t.mode = 'disabled');
+                    const labels = tracks.map(t => t.label || t.language || 'Subtitles');
+                    buildCcMenu(labels);
                 }
-            }
-            const idx = streamUrls.indexOf(url); if (idx !== -1) streamUrls.splice(idx, 1);
-            el.remove(); updateEmptyState();
+            });
         }
 
-        function removeAllTiles() {
-            for (const [, rec] of players.entries()) {
-                try { stopHealthCheck(rec); clearTimeout(rec._reconnectTimer); if (rec.hls) rec.hls.destroy(); rec.video.pause(); rec.video.src = ''; rec.video.load(); rec.tile.remove(); } catch { }
+        // Optional: add an example URL via hash for quick testing
+        // Example: multiviewer.html#https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+        window.addEventListener('DOMContentLoaded', () => {
+            const h = decodeURIComponent(location.hash.replace(/^#/, '')).trim();
+            if (h && /^https?:\/\/.+/.test(h)) {
+                addStreamTile(h);
             }
-            players.clear(); streamUrls.splice(0, streamUrls.length); updateEmptyState();
-        }
-
-        // Fit-all layout
-        function layoutGrid() {
-            const tiles = [...grid.children].filter(el => el.classList.contains('tile'));
-            const n = tiles.length;
-            if (n === 0) { grid.style.gridTemplateColumns = '1fr'; grid.style.gridAutoRows = '1fr'; return; }
-            const gap = parseFloat(getComputedStyle(grid).getPropertyValue('--gap')) || 10;
-            const vw = document.documentElement.clientWidth, vh = window.innerHeight;
-            const toolbarRect = toolbar.getBoundingClientRect();
-            const availableW = vw - 2 * 6; const availableH = vh - toolbarRect.height - 2 * 6;
-            const aspectW = 16, aspectH = 9; let bestCols = 1, bestScale = 0;
-            for (let cols = 1; cols <= n; cols++) {
-                const rows = Math.ceil(n / cols);
-                const totalGapW = gap * (cols - 1), totalGapH = gap * (rows - 1);
-                const cellW = (availableW - totalGapW) / cols, cellH = (availableH - totalGapH) / rows;
-                if (cellW <= 0 || cellH <= 0) continue;
-                const scale = Math.min(cellW / aspectW, cellH / aspectH);
-                if (scale > bestScale) { bestScale = scale; bestCols = cols; }
-            }
-            const tileW = Math.floor(aspectW * bestScale), tileH = Math.floor(aspectH * bestScale);
-            grid.style.gridTemplateColumns = `repeat(${bestCols}, ${tileW}px)`;
-            grid.style.gridAutoRows = `${tileH}px`;
-        }
-
-        const ro = new ResizeObserver(() => layoutGrid());
-        ro.observe(document.documentElement); ro.observe(grid); ro.observe(toolbar);
-        window.addEventListener('orientationchange', () => setTimeout(layoutGrid, 50));
-        window.addEventListener('resize', () => layoutGrid());
-
-        function getRecByTile(tile) { for (const [, rec] of players.entries()) if (rec.tile === tile) return rec; return null; }
-
-        (function init() {
-            const saved = loadList();
-            if (saved.length) { saved.forEach(u => { streamUrls.push(u); addStreamTile(u); }); }
-            else { updateEmptyState(); layoutGrid(); }
-        })();
+        });
     </script>
 </body>
 
