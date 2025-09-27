@@ -432,3 +432,12 @@ video::-webkit-media-controls {
 	padding-left: 2px;
 	padding-right: 2px;
 }
+
+/* Debug panel should match the rest of the page typography */
+.debug-panel {
+	font-family: inherit;
+	color: inherit;
+	font-size: 13px;
+	line-height: 1.2;
+	-webkit-font-smoothing: antialiased;
+}

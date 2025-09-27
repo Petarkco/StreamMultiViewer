@@ -123,10 +123,12 @@ function addStreamTile(url, passedInstanceId) {
 
 	const actions = document.createElement("div");
 	actions.className = "hover-actions";
+	// place debug icon first (left of other hover actions)
 	actions.innerHTML = `
-                <div class="icon-btn" title="Open stream URL in a new tab" data-action="open"><i class="ri-external-link-line"></i></div>
-                <div class="icon-btn" title="Remove stream" data-action="close"><i class="ri-close-line"></i></div>
-            `;
+				<div class="icon-btn" title="Toggle debug info" data-action="debug" aria-pressed="false"><i class="ri-bug-line"></i></div>
+				<div class="icon-btn" title="Open stream URL in a new tab" data-action="open"><i class="ri-external-link-line"></i></div>
+				<div class="icon-btn" title="Remove stream" data-action="close"><i class="ri-close-line"></i></div>
+			`;
 
 	const bottom = document.createElement("div");
 	bottom.className = "bottom-actions";
@@ -155,6 +157,26 @@ function addStreamTile(url, passedInstanceId) {
 	spinnerOverlay.appendChild(spinner);
 	tile.appendChild(spinnerOverlay);
 
+	// Debug panel (hidden by default) — toggled by the bug icon
+	const debugPanel = document.createElement("div");
+	debugPanel.className = "debug-panel";
+	debugPanel.style.position = "absolute";
+	debugPanel.style.left = "6px";
+	debugPanel.style.top = "6px";
+	debugPanel.style.zIndex = 60;
+	debugPanel.style.background = "rgba(0,0,0,0.6)";
+	debugPanel.style.color = "#e7edf5";
+	debugPanel.style.padding = "6px 8px";
+	debugPanel.style.fontSize = "12px";
+	debugPanel.style.fontFamily =
+		'ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace';
+	debugPanel.style.maxWidth = "48%";
+	debugPanel.style.maxHeight = "48%";
+	debugPanel.style.overflow = "auto";
+	debugPanel.style.display = "none";
+	debugPanel.style.border = "1px solid rgba(255,255,255,0.06)";
+	tile.appendChild(debugPanel);
+
 	tile.addEventListener("dblclick", (e) => {
 		// Ignore double-clicks that happen on UI elements (controls/menus)
 		try {
@@ -176,6 +198,12 @@ function addStreamTile(url, passedInstanceId) {
 		const btn = e.target.closest(".icon-btn");
 		if (!btn) return;
 		const action = btn.getAttribute("data-action");
+		if (action === "debug") {
+			try {
+				toggleDebugForTile(tile, btn);
+			} catch {}
+			return;
+		}
 		if (action === "open") {
 			window.open(url, "_blank", "noopener");
 		} else if (action === "close") {
@@ -190,6 +218,27 @@ function addStreamTile(url, passedInstanceId) {
 		try {
 			const menus = tile.querySelectorAll(".menu, .cc-menu, .quality-menu");
 			menus.forEach((m) => m.remove());
+		} catch {}
+	};
+
+	// Helper to toggle debug panel for this tile
+	const toggleDebugForTile = (tileEl, btn) => {
+		try {
+			const rec = getRecByTile(tileEl);
+			const panel =
+				rec && rec.tile ? rec.tile.querySelector(".debug-panel") : null;
+			if (!panel) return;
+			const pressed =
+				btn && btn.getAttribute && btn.getAttribute("aria-pressed") === "true";
+			if (btn && btn.setAttribute)
+				btn.setAttribute("aria-pressed", String(!pressed));
+			panel.style.display = pressed ? "none" : "block";
+			// prime content immediately when showing
+			if (!pressed && rec && typeof rec._debugUpdate === "function") {
+				try {
+					rec._debugUpdate();
+				} catch {}
+			}
 		} catch {}
 	};
 
@@ -240,6 +289,14 @@ function addStreamTile(url, passedInstanceId) {
 		if (!btn) return;
 		const action = btn.getAttribute("data-action");
 		const rec = getRecByTile(tile);
+
+		// debug toggle
+		if (action === "debug") {
+			try {
+				toggleDebugForTile(tile, btn);
+			} catch {}
+			return;
+		}
 		if (action === "refresh") {
 			if (rec) hardRefresh(rec);
 		} else if (action === "live") {
@@ -301,7 +358,156 @@ function addStreamTile(url, passedInstanceId) {
 		muted: true,
 		preferredQuality: null,
 	};
+
+	// Debugging: populate debug panel and track hls events + small network samples
+	rec._debugEvents = [];
+	rec._netActivity = [];
+	rec._debugUpdate = () => {
+		try {
+			const panel = rec.tile.querySelector(".debug-panel");
+			if (!panel) return;
+			const v = rec.video || {};
+
+			// stream URL (full)
+			const shortUrl = rec.url || "";
+
+			// frames processed / dropped
+			let framesInfo = "N/A";
+			try {
+				if (typeof v.getVideoPlaybackQuality === "function") {
+					const q = v.getVideoPlaybackQuality();
+					framesInfo = `${q.totalVideoFrames || 0} processed / ${
+						q.droppedVideoFrames || 0
+					} dropped`;
+				} else if (typeof v.webkitDecodedFrameCount !== "undefined") {
+					framesInfo = `${
+						v.webkitDecodedFrameCount || 0
+					} processed / 0 dropped`;
+				}
+			} catch {}
+
+			const vw = v.videoWidth || 0,
+				vh = v.videoHeight || 0;
+
+			let optimal = "?";
+			try {
+				if (rec.hls && rec.hls.levels && rec.hls.levels.length) {
+					const top = rec.hls.levels[rec.hls.levels.length - 1];
+					if (top)
+						optimal = `${top.width || "?"}x${top.height || "?"}@${
+							top.bitrate ? Math.round(top.bitrate / 1000) : "?"
+						}kbps`;
+				}
+			} catch {}
+
+			// volume removed from debug panel
+
+			// codec: show the actual codec string if available
+			let codecs = "unknown";
+			try {
+				if (rec.hls && rec.hls.levels && rec.hls.levels.length) {
+					const cur =
+						rec.hls.levels[
+							rec.hls.currentLevel >= 0
+								? rec.hls.currentLevel
+								: rec.hls.levels.length - 1
+						] || rec.hls.levels[0];
+					if (cur && cur.attrs && cur.attrs.CODECS) codecs = cur.attrs.CODECS;
+					else if (cur && cur.codec) codecs = cur.codec;
+				} else if (v && v.getVideoPlaybackQuality && v.currentSrc) {
+					// fallback: try parsing from currentSrc if it contains codecs (rare)
+					codecs = "unknown";
+				}
+			} catch {}
+
+			// connection speed plain text only
+			let kbps = "N/A";
+			try {
+				if (
+					rec.hls &&
+					typeof rec.hls.bandwidthEstimate === "number" &&
+					rec.hls.bandwidthEstimate > 0
+				)
+					kbps = Math.round(rec.hls.bandwidthEstimate / 1000) + " Kbps";
+				else if (rec._netActivity && rec._netActivity.length) {
+					const last = rec._netActivity[rec._netActivity.length - 1];
+					if (last && last.bytes && last.dt)
+						kbps = Math.round(last.bytes / (last.dt / 1000) / 1000) + " Kbps";
+				}
+			} catch {}
+
+			let bufferHealth = "N/A";
+			try {
+				if (v && v.buffered && v.buffered.length) {
+					const end = v.buffered.end(v.buffered.length - 1);
+					bufferHealth = (end - (v.currentTime || 0)).toFixed(2) + " s";
+				}
+			} catch {}
+
+			let liveLatency = "N/A";
+			try {
+				if (rec.hls && typeof rec.hls.liveSyncPosition === "number") {
+					const pos = rec.hls.liveSyncPosition || 0;
+					liveLatency = (pos - (v.currentTime || 0)).toFixed(2) + " s";
+				}
+			} catch {}
+
+			// playback speed
+			let playbackRate = "1.00x";
+			try {
+				const pr =
+					typeof v.playbackRate === "number"
+						? v.playbackRate
+						: v.playbackRate
+						? Number(v.playbackRate)
+						: 1;
+				if (!isNaN(pr)) playbackRate = pr.toFixed(2) + "x";
+			} catch {}
+
+			// only show low-latency mode when relevant; omitted otherwise
+
+			// slimline network activity sparkline
+			let activityHtml = "";
+			try {
+				const samples = (rec._netActivity || []).slice(-16);
+				const max = Math.max(1, ...samples.map((s) => s.bytes || 0));
+				activityHtml = samples
+					.map((s) => {
+						const h = Math.round(((s.bytes || 0) / max) * 12) + 2;
+						const color = s.bytes && s.bytes > 0 ? "#7fe3a7" : "#333";
+						return `<span style="display:inline-block;width:4px;height:${h}px;margin-right:1px;background:${color};vertical-align:bottom;border-radius:1px"></span>`;
+					})
+					.join("");
+			} catch {}
+
+			const html = `
+				<div style="font-weight:700;margin-bottom:6px">Stream URL &nbsp; <span style='font-weight:400'>${shortUrl}</span></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Frames</div><div style='flex:1'>${framesInfo}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Current / Optimal Res</div><div style='flex:1'>${vw}x${vh} / ${optimal}</div></div>
+				<!-- volume removed -->
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Codec</div><div style='flex:1'>${codecs}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Playback Speed</div><div style='flex:1'>${playbackRate}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Connection Speed</div><div style='flex:1'>${kbps}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Network Activity</div><div style='flex:1'>${activityHtml}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Buffer Health</div><div style='flex:1'>${bufferHealth}</div></div>
+				<div style="display:flex;gap:12px;margin-bottom:4px"><div style='min-width:180px'>Live Latency</div><div style='flex:1'>${liveLatency}</div></div>
+			`;
+
+			panel.innerHTML = html;
+		} catch {}
+	};
+
+	// keep a short interval for live stats
+	rec._debugTimer = setInterval(() => {
+		try {
+			rec._debugUpdate();
+		} catch {}
+	}, 800);
 	players.set(id, rec);
+	// prime the debug panel content immediately
+	try {
+		rec._debugUpdate();
+	} catch {}
 	// apply volume/muted immediately so playback respects preference (muted by default)
 	try {
 		video.volume = rec.volume;
@@ -364,6 +570,14 @@ function addStreamTile(url, passedInstanceId) {
 function setupPlayer(rec) {
 	// setupPlayer called
 	const { video, url } = rec;
+	// preserve current playback position so rebuilds/reconnects don't jump to live
+	try {
+		const cur =
+			video && typeof video.currentTime === "number" ? video.currentTime : 0;
+		rec._preservePosition = cur && cur > 0.5 ? cur : null;
+	} catch (e) {
+		rec._preservePosition = null;
+	}
 	if (rec.hls) {
 		try {
 			rec.hls.destroy();
@@ -407,16 +621,90 @@ function setupPlayer(rec) {
 					return;
 				}
 				const hls = new Hls({
-					maxLiveSyncPlaybackRate: 1.5,
+					// prevent hls.js from increasing playbackRate to catch up to live
+					// setting to 1.0 disables speed-up behavior
+					maxLiveSyncPlaybackRate: 1.0,
 					enableWorker: true,
-					lowLatencyMode: true,
+					// disable low-latency heuristics that can aggressively speed/seek to live
+					lowLatencyMode: false,
 					backBufferLength: 30,
 					capLevelToPlayerSize: false,
 				});
 				rec.hls = hls;
+				// small helper to push debug messages
+				const pushDebug = (msg) => {
+					try {
+						rec._debugEvents = rec._debugEvents || [];
+						rec._debugEvents.push({
+							ts: new Date().toISOString().substr(11, 8),
+							msg,
+						});
+						// keep it small
+						if (rec._debugEvents.length > 200)
+							rec._debugEvents.splice(0, rec._debugEvents.length - 200);
+					} catch {}
+				};
+				// wire some informative Hls events
+				hls.on(Hls.Events.LEVEL_LOADED, (_, data) =>
+					pushDebug(`LEVEL_LOADED level=${data.level}`)
+				);
+				hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) =>
+					pushDebug(`LEVEL_SWITCHED level=${data.level}`)
+				);
+				hls.on(Hls.Events.FRAG_LOADING, (_, data) =>
+					pushDebug(`FRAG_LOADING sn=${data.frag && data.frag.sn}`)
+				);
+				hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
+					try {
+						pushDebug(`FRAG_LOADED sn=${data.frag && data.frag.sn}`);
+						try {
+							const stats =
+								data && data.frag && data.frag.stats ? data.frag.stats : null;
+							const bytes =
+								stats && (stats.total || stats.loaded || stats.bwEstimate)
+									? stats.total || stats.loaded || stats.bwEstimate
+									: 0;
+							const dt =
+								stats && stats.tload && stats.trequest
+									? Math.max(1, stats.tload - stats.trequest)
+									: 1000;
+							rec._netActivity = rec._netActivity || [];
+							rec._netActivity.push({ t: Date.now(), bytes: bytes, dt: dt });
+							if (rec._netActivity.length > 128) rec._netActivity.shift();
+						} catch (e) {}
+					} catch (e) {}
+				});
+				hls.on(Hls.Events.ERROR, (_, d) =>
+					pushDebug(`ERROR ${d && d.type} ${d && d.details}`)
+				);
+				hls.on(Hls.Events.MANIFEST_PARSED, () => pushDebug("MANIFEST_PARSED"));
 				hls.attachMedia(video);
 				// continue wiring events below in the same block
-				hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(url));
+				hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+					try {
+						hls.loadSource(url);
+						// If we preserved a playback position, start loading from that position
+						if (
+							typeof rec._preservePosition === "number" &&
+							!Number.isNaN(rec._preservePosition)
+						) {
+							try {
+								// startLoad with a position attempts to load buffer relative to that time
+								hls.startLoad(rec._preservePosition);
+							} catch (e) {
+								// fallback: normal startLoad
+								try {
+									hls.startLoad();
+								} catch (_) {}
+							}
+						}
+					} catch (e) {
+						// Ensure source is loaded even if startLoad fails
+						try {
+							hls.loadSource(url);
+						} catch (_) {}
+					}
+				});
 				hls.on(Hls.Events.MANIFEST_PARSED, () => {
 					// manifest parsed
 					try {
@@ -464,8 +752,23 @@ function setupPlayer(rec) {
 							}
 						} catch {}
 					}
+					// If a preserved playback position exists, restore it so the element stays behind live
+					try {
+						if (
+							typeof rec._preservePosition === "number" &&
+							!Number.isNaN(rec._preservePosition)
+						) {
+							try {
+								rec.video.currentTime = rec._preservePosition;
+							} catch (_) {}
+						}
+					} catch (_) {}
 					resetBackoff(rec);
 					ensurePlay();
+					// clear preserved position after use
+					try {
+						rec._preservePosition = null;
+					} catch (_) {}
 					// apply persisted/default subtitle choice
 					try {
 						applySubtitleChoice(rec);
@@ -554,6 +857,20 @@ function setupPlayer(rec) {
 				try {
 					applySubtitleChoice(rec);
 				} catch {}
+				// restore preserved position for native playback so we don't jump to live
+				try {
+					if (
+						typeof rec._preservePosition === "number" &&
+						!Number.isNaN(rec._preservePosition)
+					) {
+						try {
+							video.currentTime = rec._preservePosition;
+						} catch (_) {}
+						try {
+							rec._preservePosition = null;
+						} catch (_) {}
+					}
+				} catch (_) {}
 			},
 			{ once: true }
 		);
@@ -1423,7 +1740,21 @@ function handleHlsError(rec, data) {
 			) {
 				// nudge loader
 				try {
-					if (rec.hls) rec.hls.startLoad();
+					if (rec.hls) {
+						// prefer loading relative to current playhead so we don't jump to live
+						try {
+							const pos =
+								rec.video && typeof rec.video.currentTime === "number"
+									? rec.video.currentTime
+									: -1;
+							if (pos >= 0) rec.hls.startLoad(pos);
+							else rec.hls.startLoad();
+						} catch (_) {
+							try {
+								rec.hls.startLoad();
+							} catch (_) {}
+						}
+					}
 				} catch {}
 				scheduleReconnect(rec);
 				return;
@@ -1533,8 +1864,19 @@ function scheduleReconnect(rec) {
 function softHeal(rec) {
 	try {
 		if (rec.hls) {
-			// Don’t stop/detach; just nudge loader/decoder
-			rec.hls.startLoad();
+			// Don’t stop/detach; just nudge loader/decoder. Use currentTime when possible so we don't jump to live
+			try {
+				const pos =
+					rec.video && typeof rec.video.currentTime === "number"
+						? rec.video.currentTime
+						: -1;
+				if (pos >= 0) rec.hls.startLoad(pos);
+				else rec.hls.startLoad();
+			} catch (e) {
+				try {
+					rec.hls.startLoad();
+				} catch (_) {}
+			}
 			try {
 				rec.hls.recoverMediaError();
 			} catch {}
@@ -1711,6 +2053,11 @@ function removeAllTiles() {
 			rec.video.pause();
 			rec.video.src = "";
 			rec.video.load();
+			try {
+				if (rec._debugTimer) clearInterval(rec._debugTimer);
+				rec._debugTimer = null;
+				rec._debugEvents = null;
+			} catch {}
 			rec.tile.remove();
 		} catch {}
 	}
