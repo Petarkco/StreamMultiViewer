@@ -38,15 +38,42 @@ body {
 .toolbar {
 	background: var(--panel);
 	border: 1px solid #1e2430;
-	padding: 4px 6px;
+	padding: 2px 6px; /* reduced vertical padding */
 	display: grid;
-	/* selector | url input (flex) | add | clear */
-	grid-template-columns: auto 1fr auto auto;
+	/* selector | url input (flex) | add | clear | settings */
+	grid-template-columns: auto 1fr auto auto auto;
 	gap: 6px;
 	align-items: center;
-	height: 42px;
-	min-height: 42px;
-	max-height: 42px;
+	height: 36px; /* slightly more compact */
+	min-height: 36px;
+	max-height: 36px;
+}
+
+/* Visually block the url input + add/clear buttons when non-custom mode is active
+   A semi-transparent overlay sits on top preventing pointer events and giving a disabled look. */
+.toolbar {
+	position: relative;
+}
+.toolbar .toolbar-disabled-overlay {
+	position: absolute;
+	background: rgba(120, 120, 120, 0.14);
+	backdrop-filter: blur(4px);
+	border-radius: 6px;
+	z-index: 30;
+	pointer-events: auto; /* capture clicks */
+	transition: opacity 140ms ease;
+	opacity: 0;
+	display: none;
+}
+.toolbar .toolbar-disabled-overlay.visible {
+	display: block;
+	opacity: 1;
+}
+
+/* hide text caret/content in the URL input while keeping placeholder visible */
+.toolbar #urlInput.masked {
+	color: transparent !important;
+	caret-color: transparent !important;
 }
 
 /* feed selector next to URL input */
@@ -60,6 +87,43 @@ body {
 	font-size: 13px;
 	min-width: 90px;
 	border-radius: 4px;
+}
+
+/* Make all toolbar controls visually unified and the same height as the selector */
+.toolbar #urlInput,
+.toolbar > button,
+.toolbar .icon-btn,
+.toolbar #feedSelector {
+	height: 28px !important;
+	min-height: 28px;
+	padding: 4px 8px;
+	background: #0f141b;
+	color: var(--text);
+	border: 1px solid #1e2430;
+	font-size: 13px;
+	border-radius: 4px;
+	box-sizing: border-box;
+}
+
+/* Narrow icon buttons in the toolbar to match selector height */
+.toolbar .icon-btn {
+	height: 28px !important;
+	width: 28px;
+	min-width: 28px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* Slightly different hover for toolbar buttons to match selector language */
+.toolbar > button:hover,
+.toolbar .icon-btn:hover {
+	background: linear-gradient(
+		180deg,
+		rgba(255, 255, 255, 0.02),
+		rgba(255, 255, 255, 0.01)
+	);
 }
 
 /* small top-left label used for ch9 city names (shows on hover)

@@ -8,8 +8,161 @@ const addBtn = document.getElementById("addBtn");
 const clearBtn = document.getElementById("clearBtn");
 const toolbar = document.getElementById("toolbar");
 const feedSelector = document.getElementById("feedSelector");
+const settingsBtn = document.getElementById("settingsBtn");
 // token used to cancel/ignore in-flight preset loaders (especially the async 9now probe)
 let presetLoadToken = 0;
+const SETTINGS_KEY = "mv_settings";
+let settings = {
+	showDebugByDefault: false,
+	autoplayMuted: true,
+	showSubtitlesByDefault: false,
+};
+// When showSubtitlesByDefault is enabled, mark tiles with _autoSubtitle=true
+// so we can select the first available subtitle track (HLS then native).
+
+function loadSettings() {
+	try {
+		const raw = localStorage.getItem(SETTINGS_KEY);
+		if (!raw) return;
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed === "object")
+			settings = Object.assign(settings, parsed);
+	} catch {}
+}
+
+// Enable/disable toolbar controls depending on view mode
+function updateToolbarState() {
+	try {
+		const isCustom = feedSelector && feedSelector.value === "custom";
+		if (input) input.disabled = !isCustom;
+		if (addBtn) addBtn.disabled = !isCustom;
+		if (clearBtn) clearBtn.disabled = !isCustom;
+		// create/position overlay to visually block the input+buttons when not custom
+		try {
+			let overlay = toolbar.querySelector(".toolbar-disabled-overlay");
+			if (!overlay) {
+				overlay = document.createElement("div");
+				overlay.className = "toolbar-disabled-overlay";
+				toolbar.appendChild(overlay);
+			}
+			if (!isCustom) {
+				// position overlay to cover url input + add + clear buttons area
+				const first = input; // left bound after selector
+				const last = clearBtn; // right bound
+				const rectToolbar = toolbar.getBoundingClientRect();
+				const rectFirst = first.getBoundingClientRect();
+				const rectLast = last.getBoundingClientRect();
+				// compute offsets relative to toolbar
+				const left = rectFirst.left - rectToolbar.left - 2; // slight inset
+				const right = rectToolbar.right - rectLast.right - 2;
+				const width = rectLast.right - rectFirst.left + 4;
+				const top = rectFirst.top - rectToolbar.top - 2;
+				const height = rectFirst.height + 4;
+				overlay.style.left = left + "px";
+				overlay.style.top = top + "px";
+				overlay.style.width = width + "px";
+				overlay.style.height = height + "px";
+				overlay.classList.add("visible");
+				// mask input text for clarity
+				try {
+					input.classList.add("masked");
+				} catch {}
+			} else {
+				overlay.classList.remove("visible");
+				try {
+					input.classList.remove("masked");
+				} catch {}
+			}
+		} catch (e) {}
+	} catch {}
+}
+
+// reposition overlay on resize/toolbar changes
+window.addEventListener("resize", () => {
+	try {
+		const overlay = toolbar.querySelector(".toolbar-disabled-overlay");
+		if (overlay && overlay.classList.contains("visible")) updateToolbarState();
+	} catch {}
+});
+
+function saveSettings() {
+	try {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+	} catch {}
+}
+
+// create a simple settings menu when clicking the settings button
+if (settingsBtn) {
+	settingsBtn.addEventListener("click", (e) => {
+		try {
+			const existing = document.querySelector(".settings-menu");
+			if (existing) {
+				existing.remove();
+				settingsBtn.setAttribute("aria-expanded", "false");
+				return;
+			}
+			const menu = document.createElement("div");
+			menu.className = "menu settings-menu";
+			const ul = document.createElement("ul");
+
+			const addCheckbox = (key, label) => {
+				const li = document.createElement("li");
+				const cb = document.createElement("input");
+				cb.type = "checkbox";
+				cb.id = "s-" + key;
+				cb.checked = !!settings[key];
+				cb.addEventListener("change", () => {
+					// Persist the preference but do NOT mutate any existing players.
+					// "By default" settings affect only page load and newly-created tiles.
+					settings[key] = !!cb.checked;
+					saveSettings();
+				});
+				const lbl = document.createElement("label");
+				lbl.htmlFor = cb.id;
+				lbl.style.marginLeft = "8px";
+				lbl.textContent = label;
+				li.style.display = "flex";
+				li.style.alignItems = "center";
+				li.style.gap = "8px";
+				li.appendChild(cb);
+				li.appendChild(lbl);
+				ul.appendChild(li);
+			};
+
+			addCheckbox("showDebugByDefault", "Show debug panel by default");
+			addCheckbox("autoplayMuted", "Autoplay streams muted");
+			// persistent global default for subtitles
+			addCheckbox("showSubtitlesByDefault", "Show subtitles by default");
+
+			menu.appendChild(ul);
+			// position near the settingsBtn
+			menu.style.visibility = "hidden";
+			// append to toolbar (toolbar is position:relative) so the menu is never clipped
+			try {
+				toolbar.appendChild(menu);
+			} catch {
+				document.body.appendChild(menu);
+			}
+			// place just below the toolbar, aligned to the right
+			menu.style.position = "absolute";
+			menu.style.top = `${toolbar.offsetHeight + 6}px`;
+			menu.style.right = "6px";
+			menu.style.left = "auto";
+			menu.style.visibility = "";
+			settingsBtn.setAttribute("aria-expanded", "true");
+			const off = (ev) => {
+				if (!menu.contains(ev.target) && ev.target !== settingsBtn) {
+					menu.remove();
+					settingsBtn.setAttribute("aria-expanded", "false");
+					document.removeEventListener("click", off);
+				}
+			};
+			setTimeout(() => document.addEventListener("click", off));
+		} catch (e) {}
+	});
+}
+
+// apply settings when creating tiles (used in addStreamTile)
 
 // restore saved view mode (persist between reloads)
 try {
@@ -21,6 +174,10 @@ if (feedSelector) {
 	feedSelector.addEventListener("change", () => {
 		try {
 			localStorage.setItem("mv_viewMode", feedSelector.value);
+		} catch {}
+		// enable/disable toolbar controls immediately
+		try {
+			updateToolbarState();
 		} catch {}
 		const mode = feedSelector.value;
 		if (mode === "custom") {
@@ -73,11 +230,10 @@ grid.addEventListener("pointerleave", () => {
 addBtn.addEventListener("click", () => {
 	const raw = input.value.trim();
 	if (!raw) return;
-	const urls = raw
-		.split(/[\s,]+/)
-		.map((s) => s.trim())
-		.filter(Boolean);
-	addUrls(urls);
+	// accept only the first URL token
+	const first = raw.split(/[,\s]+/)[0].trim();
+	if (!first) return;
+	addUrls([first]);
 	input.value = "";
 });
 input.addEventListener("keydown", (e) => {
@@ -240,7 +396,11 @@ function addStreamTile(url, passedInstanceId, labelText) {
 	const video = document.createElement("video");
 	video.setAttribute("playsinline", "");
 	video.setAttribute("muted", "");
-	video.muted = true;
+	try {
+		video.muted = !!(settings && settings.autoplayMuted);
+	} catch {
+		video.muted = true;
+	}
 	video.autoplay = true;
 	video.controls = false;
 	video.preload = "auto";
@@ -325,6 +485,16 @@ function addStreamTile(url, passedInstanceId, labelText) {
 		topLabel.textContent = labelText;
 		tile.appendChild(topLabel);
 	}
+
+	// apply settings defaults (muted/autoplay and debug visibility)
+	try {
+		if (settings && typeof settings.autoplayMuted !== "undefined") {
+			video.muted = !!settings.autoplayMuted;
+			// keep rec.muted consistent; will be set later below
+		}
+		if (settings && settings.showDebugByDefault)
+			debugPanel.style.display = "block";
+	} catch {}
 
 	tile.addEventListener("dblclick", (e) => {
 		// Ignore double-clicks that happen on UI elements (controls/menus)
@@ -504,9 +674,22 @@ function addStreamTile(url, passedInstanceId, labelText) {
 		needsHeal: false,
 		subtitleChoice: "Off",
 		volume: initialVolume,
-		muted: true,
+		muted: !!(settings && settings.autoplayMuted),
 		preferredQuality: null,
 	};
+
+	// If user prefers subtitles by default, mark this tile to auto-enable subtitles
+	// We will select the first available subtitle track (HLS subtitleTracks first,
+	// then native textTracks) when tracks become available.
+	try {
+		if (settings && settings.showSubtitlesByDefault) {
+			if (!rec.subtitleChoice || rec.subtitleChoice === "Off") {
+				// leave subtitleChoice unset and mark as auto-enabled
+				rec.subtitleChoice = null;
+				rec._autoSubtitle = true;
+			}
+		}
+	} catch {}
 
 	// Debugging: populate debug panel and track hls events + small network samples
 	rec._debugEvents = [];
@@ -818,7 +1001,7 @@ function addStreamTile(url, passedInstanceId, labelText) {
 	// apply volume/muted immediately so playback respects preference (muted by default)
 	try {
 		video.volume = rec.volume;
-		video.muted = true;
+		video.muted = !!rec.muted;
 		updateMuteButtonUI(rec);
 	} catch {}
 
@@ -1098,6 +1281,23 @@ function setupPlayer(rec) {
 					try {
 						rec.subtitleTracks =
 							data.subtitleTracks || hls.subtitleTracks || [];
+						// If the user opted to show subtitles by default and this tile was
+						// initialized with the 'Auto' sentinel, attempt to apply a selection
+						// now that subtitle track metadata is available.
+						try {
+							// If this tile was auto-marked for subtitles (rec._autoSubtitle)
+							// or has a language-coded subtitleChoice (lang:xx), try to apply
+							if (settings && settings.showSubtitlesByDefault) {
+								const isAuto = !!rec._autoSubtitle;
+								const isLangChoice =
+									typeof rec.subtitleChoice === "string" &&
+									rec.subtitleChoice.startsWith("lang:");
+								if (isAuto || isLangChoice) {
+									applySubtitleChoice(rec);
+									updateCcBadge(rec);
+								}
+							}
+						} catch (e) {}
 					} catch (e) {
 						console.error("subtitle tracks updated error", e);
 					}
@@ -1558,6 +1758,100 @@ function applySubtitleChoice(rec) {
 		if (choice && typeof choice !== "string") choice = String(choice);
 		if (choice && /^[0-9]+$/.test(choice)) choice = `hls:${choice}`;
 		if (choice && /^t\d+$/.test(choice)) choice = `native:${choice.slice(1)}`;
+	} catch (e) {
+		/* ignore */
+	}
+
+	// If this tile was auto-enabled for subtitles, and no explicit choice exists,
+	// pick the first available HLS subtitleTrack, otherwise the first native textTrack.
+	try {
+		if (
+			(rec._autoSubtitle || false) &&
+			(!choice || choice === "Off" || choice === null)
+		) {
+			// prefer HLS-managed subtitleTracks
+			if (
+				rec.hls &&
+				Array.isArray(rec.hls.subtitleTracks) &&
+				rec.hls.subtitleTracks.length
+			) {
+				choice = `hls:0`;
+			} else {
+				const tt =
+					rec.video && rec.video.textTracks ? rec.video.textTracks : [];
+				for (let i = 0; i < tt.length; i++) {
+					try {
+						if (
+							tt[i] &&
+							(tt[i].kind === "subtitles" || tt[i].kind === "captions")
+						) {
+							choice = `native:${i}`;
+							break;
+						}
+					} catch {}
+				}
+			}
+		}
+	} catch (e) {}
+
+	// support an 'Auto' sentinel: pick a sensible subtitle track when available
+	try {
+		if (typeof choice === "string" && choice.startsWith("lang:")) {
+			// requested language, e.g. lang:en
+			const want = choice.split(":")[1] || "";
+			let matched = false;
+			// prefer HLS subtitleTracks that declare a language
+			if (rec.hls && Array.isArray(rec.hls.subtitleTracks)) {
+				for (let i = 0; i < rec.hls.subtitleTracks.length; i++) {
+					const t = rec.hls.subtitleTracks[i];
+					try {
+						if (
+							t &&
+							t.lang &&
+							t.lang.toLowerCase().startsWith(want.toLowerCase())
+						) {
+							choice = `hls:${i}`;
+							matched = true;
+							break;
+						}
+						if (
+							t &&
+							t.name &&
+							t.name.toLowerCase().includes(want.toLowerCase())
+						) {
+							choice = `hls:${i}`;
+							matched = true;
+							break;
+						}
+					} catch {}
+				}
+			}
+			// fallback: search native textTracks for matching language/label
+			if (!matched) {
+				const tt =
+					rec.video && rec.video.textTracks ? rec.video.textTracks : [];
+				for (let i = 0; i < tt.length; i++) {
+					try {
+						const t = tt[i];
+						if (!t) continue;
+						if (
+							t.language &&
+							t.language.toLowerCase().startsWith(want.toLowerCase())
+						) {
+							choice = `native:${i}`;
+							matched = true;
+							break;
+						}
+						if (t.label && t.label.toLowerCase().includes(want.toLowerCase())) {
+							choice = `native:${i}`;
+							matched = true;
+							break;
+						}
+					} catch {}
+				}
+			}
+			if (!matched) choice = "Off";
+		}
 	} catch (e) {
 		/* ignore */
 	}
@@ -2442,6 +2736,14 @@ function getRecByTile(tile) {
 }
 
 (function init() {
+	// load persisted settings before creating tiles
+	try {
+		loadSettings();
+	} catch {}
+	// ensure toolbar state matches restored view mode
+	try {
+		updateToolbarState();
+	} catch {}
 	try {
 		// prefer stored feed mode (preset) over saved custom list when present
 		const mode =
@@ -2463,11 +2765,102 @@ function getRecByTile(tile) {
 			streamEntries.push(entry);
 			addStreamTile(entry.url, entry.instanceId);
 		});
+		// apply showDebugByDefault to any created recs
+		try {
+			if (settings && settings.showDebugByDefault) {
+				for (const [, rec] of players.entries()) {
+					try {
+						const panel = rec.tile.querySelector(".debug-panel");
+						const btn = rec.tile.querySelector('[data-action="debug"]');
+						if (panel) panel.style.display = "block";
+						if (btn && btn.setAttribute)
+							btn.setAttribute("aria-pressed", "true");
+					} catch {}
+				}
+			}
+			// apply subtitles-by-default to newly-created recs that were marked Auto
+			try {
+				if (settings && settings.showSubtitlesByDefault) {
+					for (const [, rec] of players.entries()) {
+						try {
+							if (rec._autoSubtitle) {
+								// immediate attempt
+								applySubtitleChoice(rec);
+								updateCcBadge(rec);
+								// retry a couple of times to allow HLS/native tracks to appear
+								setTimeout(() => {
+									try {
+										if (rec._autoSubtitle) {
+											applySubtitleChoice(rec);
+											updateCcBadge(rec);
+										}
+									} catch {}
+								}, 500);
+								setTimeout(() => {
+									try {
+										if (rec._autoSubtitle) {
+											applySubtitleChoice(rec);
+											updateCcBadge(rec);
+										}
+									} catch {}
+								}, 2000);
+							}
+						} catch {}
+					}
+				}
+			} catch {}
+		} catch {}
 	} else {
 		updateEmptyState();
 		layoutGrid();
 	}
 })();
+
+// Post-init: ensure any recs created by presets or saved lists that were
+// marked with subtitleChoice === 'Auto' get a chance to enable subtitles
+// once HLS/native tracks become available. Retry a few times with delays.
+setTimeout(() => {
+	try {
+		if (settings && settings.showSubtitlesByDefault) {
+			for (const [, rec] of players.entries()) {
+				try {
+					if (rec && rec._autoSubtitle) {
+						applySubtitleChoice(rec);
+						updateCcBadge(rec);
+					}
+				} catch {}
+			}
+		}
+	} catch {}
+}, 400);
+setTimeout(() => {
+	try {
+		if (settings && settings.showSubtitlesByDefault) {
+			for (const [, rec] of players.entries()) {
+				try {
+					if (rec && rec._autoSubtitle) {
+						applySubtitleChoice(rec);
+						updateCcBadge(rec);
+					}
+				} catch {}
+			}
+		}
+	} catch {}
+}, 1500);
+setTimeout(() => {
+	try {
+		if (settings && settings.showSubtitlesByDefault) {
+			for (const [, rec] of players.entries()) {
+				try {
+					if (rec && rec._autoSubtitle) {
+						applySubtitleChoice(rec);
+						updateCcBadge(rec);
+					}
+				} catch {}
+			}
+		}
+	} catch {}
+}, 4000);
 
 // Threshold (seconds) below which we consider the stream 'live' (approximate, like YouTube)
 const LIVE_THRESHOLD = 3.0; // seconds

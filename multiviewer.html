@@ -18,9 +18,11 @@
                 <option value="9now">9Now</option>
                 <option value="ch9">Ch9</option>
             </select>
-            <input id="urlInput" type="text" placeholder="Paste .m3u8 URL(s), separated by space/comma" />
+            <input id="urlInput" type="text" placeholder="Paste a single .m3u8 URL" title="Paste a single .m3u8 URL" />
             <button id="addBtn" title="Add all URLs">Add</button>
             <button id="clearBtn" title="Remove all streams">Clear All</button>
+            <button id="settingsBtn" class="icon-btn" title="Settings" aria-haspopup="true" aria-expanded="false"><i
+                    class="ri-settings-3-line"></i></button>
         </div>
         <div id="grid" class="grid" aria-live="polite"></div>
     </div>
