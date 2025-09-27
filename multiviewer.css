@@ -306,16 +306,6 @@ button:active {
 	gap: 4px;
 }
 
-/* listen (speech capture) control */
-.icon-btn[data-action="listen"] {
-	width: var(--control-size);
-	height: var(--control-size);
-	display: grid;
-	place-items: center;
-}
-.tile.listening { box-shadow: inset 0 0 0 3px rgba(43,121,255,0.06); }
-.icon-btn[data-action="listen"].active { background: linear-gradient(180deg, rgba(43,121,255,0.14), rgba(43,121,255,0.06)); }
-
 /* small dot used as the live indicator inside the live pill */
 .live-dot {
 	width: 10px;
