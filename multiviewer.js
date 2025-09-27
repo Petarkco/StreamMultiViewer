@@ -160,14 +160,20 @@ function loadPresets(mode) {
 		};
 		// city codes used by original index.html
 		const cities = ["syd", "mel", "bne", "adl", "per", "new", "nlm", "gcq"];
-		cities.forEach((c) => {
+		// cancellation token for short synchronous-ish loader
+		const myToken = ++presetLoadToken;
+		for (const c of cities) {
+			// if mode changed/cancelled, stop
+			if (myToken !== presetLoadToken) return;
 			const url = `https://9now-livestreams-fhd-t.akamaized.net/u/prod/simulcast/${c}/ch9/hls/r1/index.m3u8`;
-			const label = cityMap[c] || c.toUpperCase();
+			const label = cityMap[c] || c;
+			// check again before adding (defensive)
+			if (myToken !== presetLoadToken) return;
 			const entry = { url, instanceId: crypto.randomUUID(), labelText: label };
 			streamEntries.push(entry);
 			addStreamTile(entry.url, entry.instanceId, label);
-		});
-		layoutGrid();
+		}
+		if (myToken === presetLoadToken) layoutGrid();
 		return;
 	}
 
