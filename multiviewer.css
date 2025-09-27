@@ -62,7 +62,9 @@ body {
 	border-radius: 4px;
 }
 
-/* small top-left label used for ch9 city names (shows on hover) */
+/* small top-left label used for ch9 city names (shows on hover)
+   Use opacity/transform transitions so labels animate in/out like other UI elements.
+   Avoid display:none/block so transitions can run. */
 .tile .top-left-label {
 	position: absolute;
 	left: 6px;
@@ -72,16 +74,25 @@ body {
 	padding: 4px 8px;
 	font-size: 13px;
 	border-radius: 4px;
-	display: none;
 	z-index: 6;
+	opacity: 0;
+	transform: translateY(-6px);
+	transition: opacity 140ms ease, transform 140ms ease;
+	pointer-events: none;
+	will-change: opacity, transform;
 }
-.tile:hover .top-left-label {
-	display: block;
+.tile:hover .top-left-label,
+.grid.show-all-labels .top-left-label {
+	opacity: 1;
+	transform: translateY(0);
+	pointer-events: auto;
 }
 
-/* show all top-left labels when the grid is marked (useful for ch9 preset) */
-.grid.show-all-labels .top-left-label {
-	display: block;
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+	.tile .top-left-label {
+		transition: none;
+	}
 }
 
 #urlInput {

@@ -49,11 +49,18 @@ if (feedSelector) {
 	});
 }
 
-// When ch9 mode is selected, hovering the whole grid will show all city labels
-grid.addEventListener("pointerenter", () => {
+// When ch9 mode is selected, show all city labels only while the pointer is
+// directly over a tile. Previously we showed labels for any pointer inside
+// the grid which left labels visible when the cursor was between tiles.
+// Use pointermove to detect when the pointer is over a .tile and pointerleave
+// to clear the state when leaving the grid entirely.
+grid.addEventListener("pointermove", (e) => {
 	try {
-		if (feedSelector && feedSelector.value === "ch9")
-			grid.classList.add("show-all-labels");
+		if (!feedSelector || feedSelector.value !== "ch9") return;
+		const overTile =
+			!!e.target && !!e.target.closest && e.target.closest(".tile");
+		if (overTile) grid.classList.add("show-all-labels");
+		else grid.classList.remove("show-all-labels");
 	} catch {}
 });
 grid.addEventListener("pointerleave", () => {
