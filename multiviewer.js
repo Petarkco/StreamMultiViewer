@@ -1,0 +1,1792 @@
+const LS_KEY = "multiHlsUrls";
+const players = new Map(); // id -> { hls, video, url, tile, backoffMs, lastTime, healthTimer, needsHeal }
+const streamEntries = []; // duplicates allowed; each entry: { url, instanceId }
+
+const grid = document.getElementById("grid");
+const input = document.getElementById("urlInput");
+const addBtn = document.getElementById("addBtn");
+const clearBtn = document.getElementById("clearBtn");
+const toolbar = document.getElementById("toolbar");
+
+addBtn.addEventListener("click", () => {
+	const raw = input.value.trim();
+	if (!raw) return;
+	const urls = raw
+		.split(/[\s,]+/)
+		.map((s) => s.trim())
+		.filter(Boolean);
+	addUrls(urls);
+	input.value = "";
+});
+input.addEventListener("keydown", (e) => {
+	if (e.key === "Enter") {
+		e.preventDefault();
+		addBtn.click();
+	}
+});
+clearBtn.addEventListener("click", () => {
+	removeAllTiles();
+	saveList();
+	layoutGrid();
+});
+
+function addUrls(urls) {
+	let added = 0;
+	urls.forEach((u) => {
+		if (!u) return;
+		const entry = { url: u, instanceId: crypto.randomUUID() };
+		streamEntries.push(entry);
+		addStreamTile(entry.url, entry.instanceId);
+		added++;
+	});
+	if (added > 0) {
+		saveList();
+		layoutGrid();
+	}
+	updateEmptyState();
+}
+function saveList() {
+	try {
+		localStorage.setItem(LS_KEY, JSON.stringify(streamEntries));
+	} catch {}
+}
+function loadList() {
+	try {
+		const raw = localStorage.getItem(LS_KEY);
+		if (!raw) return [];
+		const arr = JSON.parse(raw);
+		if (!Array.isArray(arr)) return []; // normalize legacy string arrays
+		// legacy stored arrays might be strings; map to entries
+		if (arr.length && typeof arr[0] === "string") {
+			const converted = arr.map((s) => ({
+				url: s,
+				instanceId: crypto.randomUUID(),
+			}));
+			// persist normalized form
+			try {
+				localStorage.setItem(LS_KEY, JSON.stringify(converted));
+			} catch {}
+			return converted;
+		}
+		return arr.filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
+function updateEmptyState() {
+	if ([...grid.children].every((el) => !el.classList.contains("tile"))) {
+		const div = document.createElement("div");
+		div.className = "empty";
+		div.textContent = "No streams yet.";
+		grid.appendChild(div);
+	} else {
+		const first = grid.querySelector(".empty");
+		if (first) first.remove();
+	}
+}
+
+// Preferences were intentionally removed: only stream list persists
+
+function addStreamTile(url, passedInstanceId) {
+	const placeholder = grid.querySelector(".empty");
+	if (placeholder) placeholder.remove();
+
+	const tile = document.createElement("div");
+	tile.className = "tile";
+	tile.tabIndex = 0;
+	const video = document.createElement("video");
+	video.setAttribute("playsinline", "");
+	video.setAttribute("muted", "");
+	video.muted = true;
+	video.autoplay = true;
+	video.controls = false;
+	video.preload = "auto";
+	// Ensure native text tracks are off by default when they become available
+	video.addEventListener(
+		"loadedmetadata",
+		() => {
+			try {
+				const tt = video.textTracks || [];
+				for (let i = 0; i < tt.length; i++) tt[i].mode = "disabled";
+			} catch {}
+		},
+		{ once: true }
+	);
+	// Fallback attempt (some tracks appear after a short delay)
+	setTimeout(() => {
+		try {
+			const tt = video.textTracks || [];
+			for (let i = 0; i < tt.length; i++) tt[i].mode = "disabled";
+		} catch {}
+	}, 600);
+
+	const actions = document.createElement("div");
+	actions.className = "hover-actions";
+	actions.innerHTML = `
+                <div class="icon-btn" title="Open stream URL in a new tab" data-action="open"><i class="ri-external-link-line"></i></div>
+                <div class="icon-btn" title="Remove stream" data-action="close"><i class="ri-close-line"></i></div>
+            `;
+
+	const bottom = document.createElement("div");
+	bottom.className = "bottom-actions";
+	// left-most: live button that contains a small dot and latency badge (integrated), then refresh, mute, cc, quality
+	bottom.innerHTML = `
+				<div class="icon-btn" title="Go to live" data-action="live">
+					<span class="live-dot" aria-hidden="true"></span>
+					<div class="latency-badge">&nbsp;</div>
+				</div>
+                <div class="icon-btn" title="Refresh stream" data-action="refresh"><i class="ri-refresh-line"></i></div>
+                <div class="icon-btn" title="Unmute" data-action="mute"><i class="ri-volume-mute-line"></i></div>
+                <div class="icon-btn" title="Subtitles" data-action="cc"><i class="ri-closed-captioning-line"></i><span class="cc-badge" style="display:none"></span></div>
+                <div class="icon-btn" title="Quality/Resolution" data-action="cog"><i class="ri-settings-3-line"></i></div>
+            `;
+
+	tile.appendChild(video);
+	tile.appendChild(actions);
+	tile.appendChild(bottom);
+	grid.appendChild(tile);
+
+	// Add a spinner overlay element (hidden by default)
+	const spinnerOverlay = document.createElement("div");
+	spinnerOverlay.className = "spinner-overlay";
+	const spinner = document.createElement("div");
+	spinner.className = "spinner";
+	spinnerOverlay.appendChild(spinner);
+	tile.appendChild(spinnerOverlay);
+
+	tile.addEventListener("dblclick", (e) => {
+		// Ignore double-clicks that happen on UI elements (controls/menus)
+		try {
+			if (
+				e &&
+				e.target &&
+				(e.target.closest(".icon-btn") ||
+					e.target.closest(".menu") ||
+					e.target.closest(".cc-menu") ||
+					e.target.closest(".quality-menu"))
+			)
+				return;
+		} catch {}
+		if (!document.fullscreenElement) tile.requestFullscreen?.();
+		else document.exitFullscreen?.();
+	});
+
+	actions.addEventListener("click", (e) => {
+		const btn = e.target.closest(".icon-btn");
+		if (!btn) return;
+		const action = btn.getAttribute("data-action");
+		if (action === "open") {
+			window.open(url, "_blank", "noopener");
+		} else if (action === "close") {
+			destroyTile(tile, url);
+			saveList();
+			layoutGrid();
+		}
+	});
+
+	// Helper: remove any open menus under this tile so only one option panel is visible
+	const closeMenusOnTile = () => {
+		try {
+			const menus = tile.querySelectorAll(".menu, .cc-menu, .quality-menu");
+			menus.forEach((m) => m.remove());
+		} catch {}
+	};
+
+	// Helper to show the proper menu for hover or click (closes others first)
+	const showMenuForAction = (btn) => {
+		const action = btn.getAttribute("data-action");
+		const rec = getRecByTile(tile);
+		if (!rec) return;
+		try {
+			// close existing menus on this tile before opening a new one
+			closeMenusOnTile();
+			if (action === "mute") {
+				try {
+					showVolumeMenu(rec, btn);
+				} catch {}
+			} else if (action === "cc") {
+				try {
+					toggleSubtitles(rec, btn);
+				} catch {}
+			} else if (action === "cog") {
+				try {
+					showQualityMenu(rec, btn);
+				} catch {}
+			}
+		} catch {}
+	};
+
+	// Attach pointerenter to bottom icons that show menus so they appear on hover
+	bottom.querySelectorAll(".icon-btn").forEach((btn) => {
+		const action = btn.getAttribute("data-action");
+		if (action === "mute" || action === "cc" || action === "cog") {
+			btn.addEventListener("pointerenter", (e) => {
+				showMenuForAction(btn);
+			});
+		}
+	});
+
+	// Ensure menus are removed when the tile's UI hides (tile mouseleave)
+	tile.addEventListener("pointerleave", (e) => {
+		try {
+			const existing = tile.querySelector(".menu");
+			if (existing) existing.remove();
+		} catch {}
+	});
+
+	bottom.addEventListener("click", (e) => {
+		const btn = e.target.closest(".icon-btn");
+		if (!btn) return;
+		const action = btn.getAttribute("data-action");
+		const rec = getRecByTile(tile);
+		if (action === "refresh") {
+			if (rec) hardRefresh(rec);
+		} else if (action === "live") {
+			try {
+				if (rec) gotoLive(rec);
+			} catch {}
+		} else if (action === "mute") {
+			try {
+				// toggle internal muted state first
+				rec.muted = !rec.muted;
+				// reflect onto the media element
+				try {
+					rec.video.muted = rec.muted;
+				} catch {}
+				// update button UI consistently
+				try {
+					updateMuteButtonUI(rec);
+				} catch {}
+				// if unmuted, attempt to resume playback (user gesture) so streams don't remain frozen
+				try {
+					if (!rec.muted) {
+						try {
+							rec.video.play().catch(() => {});
+						} catch {}
+					}
+				} catch {}
+			} catch {}
+			// Preferences removed: do not persist muted/volume
+			// unmute overlay removed; no-op
+			// open volume menu for fine control (close others first)
+			try {
+				closeMenusOnTile();
+				showVolumeMenu(rec, btn);
+			} catch {}
+		} else if (action === "cc") {
+			toggleSubtitles(rec, btn);
+		} else if (action === "cog") {
+			showQualityMenu(rec, btn);
+		}
+	});
+
+	// instance id (use passed one when restoring from saved list)
+	const instanceId = passedInstanceId || crypto.randomUUID();
+	const id = instanceId;
+	// streams start muted by default
+	const initialVolume = video.volume || 1;
+	const rec = {
+		instanceId,
+		hls: null,
+		video,
+		url,
+		tile,
+		backoffMs: 0,
+		lastTime: 0,
+		healthTimer: null,
+		needsHeal: false,
+		subtitleChoice: "Off",
+		volume: initialVolume,
+		muted: true,
+		preferredQuality: null,
+	};
+	players.set(id, rec);
+	// apply volume/muted immediately so playback respects preference (muted by default)
+	try {
+		video.volume = rec.volume;
+		video.muted = true;
+		updateMuteButtonUI(rec);
+	} catch {}
+
+	// spinner helpers
+	rec._showSpinner = () => {
+		try {
+			const el = rec.tile.querySelector(".spinner-overlay");
+			if (el) el.classList.add("visible");
+		} catch {}
+	};
+	rec._hideSpinner = () => {
+		try {
+			const el = rec.tile.querySelector(".spinner-overlay");
+			if (el) el.classList.remove("visible");
+		} catch {}
+	};
+
+	// Video-level events for buffering/playing state
+	const onWaiting = () => {
+		rec._showSpinner();
+	};
+	const onStalled = () => {
+		rec._showSpinner();
+	};
+	const onPlaying = () => {
+		rec._hideSpinner();
+	};
+	const onCanPlay = () => {
+		rec._hideSpinner();
+	};
+	const onCanPlayThrough = () => {
+		rec._hideSpinner();
+	};
+	const onError = () => {
+		rec._hideSpinner();
+	};
+	video.addEventListener("waiting", onWaiting);
+	video.addEventListener("stalled", onStalled);
+	video.addEventListener("playing", onPlaying);
+	video.addEventListener("canplay", onCanPlay);
+	video.addEventListener("canplaythrough", onCanPlayThrough);
+	video.addEventListener("error", onError);
+	// Latency / live badge update timer (created per-rec)
+	rec._updateLatencyUI = () => updateLatencyUI(rec);
+	rec._latencyTimer = setInterval(() => {
+		try {
+			updateLatencyUI(rec);
+		} catch {}
+	}, 800);
+
+	setupPlayer(rec);
+	startHealthCheck(rec);
+	layoutGrid();
+}
+
+function setupPlayer(rec) {
+	// setupPlayer called
+	const { video, url } = rec;
+	if (rec.hls) {
+		try {
+			rec.hls.destroy();
+		} catch {}
+		rec.hls = null;
+	}
+	video.src = "";
+	video.load();
+
+	const ensurePlay = () => {
+		try {
+			const p = video.play();
+			if (p && typeof p.then === "function") {
+				p.catch(() => {
+					/* ignore autoplay rejection when muted-by-default */
+				});
+			}
+		} catch (e) {
+			/* ignore */
+		}
+	};
+
+	if (window.Hls && Hls.isSupported()) {
+		// using hls.js for this url
+		// Do a quick preflight to detect 404/CORS/bogus responses before creating Hls
+		try {
+			if (rec._showSpinner) rec._showSpinner();
+		} catch {}
+		preflightManifest(url, 5000)
+			.then((pf) => {
+				if (!pf || !pf.ok) {
+					// show actionable error on tile instead of creating Hls
+					showTileError(
+						rec,
+						pf && pf.reason
+							? `Manifest error: ${pf.reason}`
+							: `Unable to load manifest (${
+									pf && pf.status ? pf.status : "error"
+							  })`
+					);
+					return;
+				}
+				const hls = new Hls({
+					maxLiveSyncPlaybackRate: 1.5,
+					enableWorker: true,
+					lowLatencyMode: true,
+					backBufferLength: 30,
+					capLevelToPlayerSize: false,
+				});
+				rec.hls = hls;
+				hls.attachMedia(video);
+				// continue wiring events below in the same block
+				hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(url));
+				hls.on(Hls.Events.MANIFEST_PARSED, () => {
+					// manifest parsed
+					try {
+						if (rec._hideSpinner) rec._hideSpinner();
+					} catch {}
+					rec.errorAttempts = 0; // reset error counter on success
+					if (hls.levels && hls.levels.length > 0) {
+						const top = hls.levels.length - 1;
+						hls.nextLevel = top;
+						hls.currentLevel = top;
+						hls.loadLevel = top;
+						// populate rec.levels for the quality menu (robust bitrate parsing)
+						rec.levels = (hls.levels || []).map((l, i) => {
+							const attrs = l.attrs || {};
+							const bitrate =
+								l.bitrate ||
+								l.maxBitrate ||
+								(attrs.BANDWIDTH ? parseInt(attrs.BANDWIDTH, 10) : 0) ||
+								0;
+							return { id: i, width: l.width, height: l.height, bitrate };
+						});
+						// apply any persisted preferred quality (including -1 for Auto)
+						try {
+							if (
+								typeof rec.preferredQuality !== "undefined" &&
+								rec.preferredQuality !== null
+							) {
+								if (rec.preferredQuality === -1) {
+									hls.currentLevel = -1;
+								} else if (
+									Number.isInteger(rec.preferredQuality) &&
+									rec.preferredQuality >= 0 &&
+									rec.preferredQuality < hls.levels.length
+								) {
+									hls.currentLevel = rec.preferredQuality;
+								}
+							}
+						} catch (e) {
+							/* ignore */
+						}
+						// default subtitles off for hls.js-managed subtitle tracks if they exist
+						try {
+							if (hls.subtitleTracks && hls.subtitleTracks.length) {
+								hls.subtitleTrack = -1;
+							}
+						} catch {}
+					}
+					resetBackoff(rec);
+					ensurePlay();
+					// apply persisted/default subtitle choice
+					try {
+						applySubtitleChoice(rec);
+					} catch {}
+				});
+				// Listen for subtitle track updates and switches
+				hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_, data) => {
+					try {
+						rec.subtitleTracks =
+							data.subtitleTracks || hls.subtitleTracks || [];
+					} catch (e) {
+						console.error("subtitle tracks updated error", e);
+					}
+				});
+				hls.on(Hls.Events.SUBTITLE_TRACK_SWITCH, (_, data) => {
+					try {
+						if (typeof data.id !== "undefined") {
+							if (data.id === -1) rec.subtitleChoice = "Off";
+							else rec.subtitleChoice = `hls:${data.id}`;
+						}
+						updateCcBadge(rec);
+					} catch (e) {
+						console.error("subtitle track switch error", e);
+					}
+				});
+				// expose levels for quality menu
+				hls.on(Hls.Events.LEVELS_UPDATED, () => {
+					try {
+						rec.levels = (hls.levels || []).map((l, i) => {
+							const attrs = l.attrs || {};
+							const bitrate =
+								l.bitrate ||
+								l.maxBitrate ||
+								(attrs.BANDWIDTH ? parseInt(attrs.BANDWIDTH, 10) : 0) ||
+								0;
+							return { id: i, width: l.width, height: l.height, bitrate };
+						});
+						// re-apply preferred quality if set and levels changed
+						try {
+							if (
+								typeof rec.preferredQuality !== "undefined" &&
+								rec.preferredQuality !== null
+							) {
+								if (rec.preferredQuality === -1) {
+									hls.currentLevel = -1;
+								} else if (
+									Number.isInteger(rec.preferredQuality) &&
+									rec.preferredQuality >= 0 &&
+									rec.preferredQuality < hls.levels.length
+								) {
+									hls.currentLevel = rec.preferredQuality;
+								}
+							}
+						} catch (e) {}
+					} catch (e) {
+						/* ignore */
+					}
+				});
+				hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+					rec.currentLevel = data.level;
+				});
+				hls.on(Hls.Events.LEVEL_LOADED, () => {
+					if (hls.levels && hls.levels.length > 0) {
+						const top = hls.levels.length - 1;
+						if (hls.currentLevel !== top) hls.currentLevel = top;
+					}
+				});
+				hls.on(Hls.Events.ERROR, (_, data) => {
+					handleHlsError(rec, data);
+				});
+			})
+			.catch((e) => {
+				showTileError(rec, "Manifest preflight failed");
+			});
+	} else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+		video.src = url;
+		video.addEventListener(
+			"loadedmetadata",
+			() => {
+				try {
+					if (rec._hideSpinner) rec._hideSpinner();
+				} catch {}
+				rec.errorAttempts = 0;
+				resetBackoff(rec);
+				ensurePlay();
+				try {
+					applySubtitleChoice(rec);
+				} catch {}
+			},
+			{ once: true }
+		);
+		// For native playback, reset error attempts on successful metadata load (handled above)
+		// for native playback, attempt to populate textTracks from existing tracks on the element
+		setTimeout(() => {
+			try {
+				rec.textTracks = Array.from(video.textTracks || []);
+			} catch {
+				rec.textTracks = [];
+			}
+		}, 500);
+	} else {
+		showUnsupported(rec.tile);
+	}
+}
+
+// Toggle subtitles: create a track list UI, persist selection, and attach/detach cues
+function toggleSubtitles(rec, btn) {
+	if (!rec) return;
+	// If menu exists, remove it
+	const existing = rec.tile.querySelector(".cc-menu");
+	if (existing) {
+		existing.remove();
+		return;
+	}
+	const menu = document.createElement("div");
+	menu.className = "menu cc-menu";
+	const ul = document.createElement("ul");
+	// gather tracks: explicitly tag HLS vs native tracks so selections are unambiguous
+	const tracks = [];
+	try {
+		if (rec.hls && rec.hls.subtitleTracks && rec.hls.subtitleTracks.length) {
+			rec.hls.subtitleTracks.forEach((t, i) =>
+				tracks.push({
+					type: "hls",
+					id: i,
+					label: t.name || t.lang || `sub-${i}`,
+				})
+			);
+		}
+	} catch {}
+	try {
+		(rec.video.textTracks || []).forEach((t, i) =>
+			tracks.push({
+				type: "native",
+				id: i,
+				label: t.label || t.language || `track-${i}`,
+			})
+		);
+	} catch {}
+
+	// Build track list; 'Off' will be appended last so it remains at the bottom
+	const offLi = document.createElement("li");
+	const offChk = document.createElement("span");
+	offChk.className = "check";
+	offChk.textContent = "✔";
+	const offTxt = document.createElement("span");
+	offTxt.textContent = "Off";
+	offLi.appendChild(offChk);
+	offLi.appendChild(offTxt);
+	offLi.tabIndex = 0;
+	offLi.addEventListener("click", () => {
+		rec.subtitleChoice = "Off";
+		applySubtitleChoice(rec);
+		updateCcBadge(rec);
+		menu.remove();
+	});
+
+	// normalize current choice similar to applySubtitleChoice so we can mark the active item
+	let currentChoice = rec.subtitleChoice;
+	try {
+		if (currentChoice && typeof currentChoice !== "string")
+			currentChoice = String(currentChoice);
+		if (currentChoice && /^[0-9]+$/.test(currentChoice))
+			currentChoice = `hls:${currentChoice}`;
+		if (currentChoice && /^t\d+$/.test(currentChoice))
+			currentChoice = `native:${currentChoice.slice(1)}`;
+	} catch (e) {
+		/* ignore */
+	}
+
+	const addItem = (label, cb, isActive) => {
+		const li = document.createElement("li");
+		const chk = document.createElement("span");
+		chk.className = "check";
+		chk.textContent = "✔";
+		const txt = document.createElement("span");
+		txt.textContent = label;
+		li.appendChild(chk);
+		li.appendChild(txt);
+		if (isActive) li.classList.add("active");
+		li.tabIndex = 0;
+		li.addEventListener("click", () => {
+			cb();
+			menu.remove();
+		});
+		ul.appendChild(li);
+	};
+
+	if (tracks.length === 0) {
+		const li = document.createElement("li");
+		li.textContent = "No subtitles available";
+		ul.appendChild(li);
+		// mark Off active if that's the current choice
+		if (!currentChoice || currentChoice === "Off")
+			offLi.classList.add("active");
+		ul.appendChild(offLi);
+	} else {
+		tracks.forEach((t) => {
+			const key = `${t.type}:${t.id}`;
+			addItem(
+				t.label,
+				() => {
+					rec.subtitleChoice = key;
+					applySubtitleChoice(rec);
+					updateCcBadge(rec);
+				},
+				currentChoice === key
+			);
+		});
+		// append Off as the last option and mark active if selected
+		if (!currentChoice || currentChoice === "Off")
+			offLi.classList.add("active");
+		ul.appendChild(offLi);
+	}
+	menu.appendChild(ul);
+	// append hidden to measure size, then position above the button if possible
+	menu.style.visibility = "hidden";
+	rec.tile.appendChild(menu);
+	positionMenuNearButton(menu, btn, rec.tile);
+	menu.style.visibility = "";
+	// remove menu when clicking outside
+	const off = (ev) => {
+		if (!menu.contains(ev.target)) {
+			menu.remove();
+			document.removeEventListener("click", off);
+		}
+	};
+	setTimeout(() => document.addEventListener("click", off));
+}
+
+// Show a small volume menu with mute toggle and slider
+function showVolumeMenu(rec, btn) {
+	if (!rec) return;
+	const existing = rec.tile.querySelector(".volume-menu");
+	if (existing) {
+		existing.remove();
+		return;
+	}
+	const menu = document.createElement("div");
+	menu.className = "menu volume-menu";
+	const container = document.createElement("div");
+	// compact container for volume menu
+	container.style.display = "flex";
+	container.style.flexDirection = "column";
+	container.style.gap = "6px";
+	container.style.padding = "4px 0";
+
+	// No inline mute control here — use the bottom mute button for toggling.
+
+	// Build a small custom track control (standard direction: left = min, right = max)
+	// This keeps the fill and thumb aligned and pointer math robust during fast drags.
+	const trackWrap = document.createElement("div");
+	// vertical slider: narrow width, tall height
+	trackWrap.className = "volume-track";
+	trackWrap.style.width = "10px";
+	trackWrap.style.height = "72px";
+	trackWrap.style.position = "relative";
+	trackWrap.style.cursor = "pointer";
+
+	const fill = document.createElement("div");
+	fill.className = "volume-fill";
+	fill.style.position = "absolute";
+	// Pad the fill inside the track border so visuals match the surrounding UI
+	const pad = 3; // px padding on each side
+	// For vertical: fill grows from the bottom upwards
+	fill.style.left = pad + "px";
+	fill.style.right = pad + "px";
+	fill.style.bottom = pad + "px";
+	fill.style.height = "0px";
+	fill.style.borderRadius = "6px";
+
+	const thumb = document.createElement("div");
+	thumb.className = "volume-thumb";
+	thumb.style.position = "absolute";
+	thumb.style.left = "50%";
+	thumb.style.transform = "translate(-50%,-50%)";
+	thumb.style.width = "12px";
+	thumb.style.height = "12px";
+	thumb.style.borderRadius = "50%";
+	trackWrap.appendChild(fill);
+	trackWrap.appendChild(thumb);
+	// center the track inside the narrow menu
+	trackWrap.style.margin = "6px auto";
+	container.appendChild(trackWrap);
+
+	// make the container fill the menu so centering works predictably
+	container.style.width = "100%";
+	container.style.boxSizing = "border-box";
+	menu.appendChild(container);
+	// make the volume menu compact (match icon width)
+	menu.style.boxSizing = "border-box";
+	menu.style.minWidth = "32px";
+	menu.style.width = "32px";
+	menu.style.maxWidth = "32px";
+	menu.style.display = "flex";
+	menu.style.flexDirection = "column";
+	menu.style.alignItems = "center";
+	menu.style.visibility = "hidden";
+	rec.tile.appendChild(menu);
+	positionMenuNearButton(menu, btn, rec.tile);
+	menu.style.visibility = "";
+
+	const removeMenu = () => {
+		try {
+			menu.remove();
+			document.removeEventListener("click", off);
+		} catch {}
+	};
+
+	const setVisual = (v) => {
+		// Standard mapping: left == min (0), right == max (1)
+		const pct = Math.max(0, Math.min(1, v));
+		// compute pixel sizes from the layout rect so we match pointer math for vertical layout
+		const rect = trackWrap.getBoundingClientRect();
+		const totalH = Math.max(0, rect.height || 160);
+		const innerH = Math.max(0, totalH - pad * 2); // account for top/bottom padding
+		// fill grows from the bottom upwards as volume increases
+		const fillPx = Math.round(pct * innerH);
+		fill.style.height = `${fillPx}px`;
+		fill.style.bottom = pad + "px";
+		// thumb sits at the top edge of the fill (centered via translate)
+		const thumbTop = pad + (innerH - fillPx);
+		thumb.style.top = `${thumbTop}px`;
+		try {
+			thumb.style.zIndex = "2";
+			fill.style.zIndex = "1";
+		} catch (_) {}
+	};
+
+	// compute volume from pointer position on the track: left -> max volume
+
+	// Map pointer position to volume (standard: left = 0, right = 1)
+	let dragging = false;
+	let activePointerId = null;
+	const updateFromPointer = (e) => {
+		try {
+			const rect = trackWrap.getBoundingClientRect();
+			const totalH = Math.max(0, rect.height || 160);
+			const innerH = Math.max(0, totalH - pad * 2);
+			let y = e.clientY - rect.top - pad; // position inside inner area (0 = top)
+			y = Math.max(0, Math.min(innerH, y));
+			const ratio = innerH > 0 ? y / innerH : 0;
+			// For vertical slider: top should be max -> volume = 1 - ratio
+			const v = Math.max(0, Math.min(1, 1 - ratio));
+			rec.volume = v;
+			try {
+				rec.video.volume = v;
+			} catch {}
+			rec.muted = v === 0;
+			try {
+				rec.video.muted = rec.muted;
+			} catch {}
+			// Preferences removed: do not persist volume/muted
+			setVisual(v);
+			updateMuteButtonUI(rec);
+		} catch (e) {
+			/* ignore */
+		}
+	};
+
+	// Document-level handlers to make dragging robust even if pointer moves fast
+	const docMove = (e) => {
+		if (dragging) updateFromPointer(e);
+	};
+	const docUp = (e) => {
+		if (activePointerId === e.pointerId) {
+			dragging = false;
+			activePointerId = null;
+			try {
+				trackWrap.releasePointerCapture?.(e.pointerId);
+			} catch {}
+			try {
+				document.removeEventListener("pointermove", docMove);
+				document.removeEventListener("pointerup", docUp);
+			} catch {}
+		}
+	};
+
+	trackWrap.addEventListener("pointerdown", (e) => {
+		dragging = true;
+		activePointerId = e.pointerId;
+		updateFromPointer(e);
+		try {
+			trackWrap.setPointerCapture?.(e.pointerId);
+		} catch {}
+		// attach document handlers as a fallback
+		try {
+			document.addEventListener("pointermove", docMove);
+			document.addEventListener("pointerup", docUp);
+		} catch {}
+	});
+	trackWrap.addEventListener("pointermove", (e) => {
+		if (!dragging) return;
+		updateFromPointer(e);
+	});
+	trackWrap.addEventListener("pointerup", (e) => {
+		docUp(e);
+	});
+	trackWrap.addEventListener("pointercancel", (e) => {
+		docUp(e);
+	});
+
+	// initialize visuals from current volume
+	try {
+		setVisual(rec.video.volume || rec.volume || 1);
+	} catch {
+		setVisual(1);
+	}
+
+	const off = (ev) => {
+		if (!menu.contains(ev.target)) removeMenu();
+	};
+	setTimeout(() => document.addEventListener("click", off));
+}
+
+function updateMuteButtonUI(rec) {
+	try {
+		const btn = rec.tile.querySelector('[data-action="mute"]');
+		if (!btn) return;
+		const icon = btn.firstElementChild;
+		// prefer rec.muted/rec.volume when present (state source-of-truth)
+		const isMuted =
+			typeof rec.muted !== "undefined"
+				? !!rec.muted
+				: !!rec.video && !!rec.video.muted;
+		const vol =
+			typeof rec.volume === "number"
+				? rec.volume
+				: rec.video && typeof rec.video.volume === "number"
+				? rec.video.volume
+				: 1;
+		if (isMuted || vol === 0) {
+			btn.title = "Unmute";
+			icon.className = "ri-volume-mute-line";
+		} else {
+			btn.title = "Mute";
+			icon.className = vol > 0.5 ? "ri-volume-up-line" : "ri-volume-down-line";
+		}
+	} catch {}
+}
+
+function applySubtitleChoice(rec) {
+	if (!rec) return;
+	let choice = rec.subtitleChoice;
+	// applySubtitleChoice invoked
+	// disable native tracks first
+	try {
+		const tt = rec.video.textTracks || [];
+		for (let i = 0; i < tt.length; i++) tt[i].mode = "disabled";
+	} catch {}
+
+	// normalize legacy formats: numeric -> hls:N, tN -> native:N
+	try {
+		if (choice && typeof choice !== "string") choice = String(choice);
+		if (choice && /^[0-9]+$/.test(choice)) choice = `hls:${choice}`;
+		if (choice && /^t\d+$/.test(choice)) choice = `native:${choice.slice(1)}`;
+	} catch (e) {
+		/* ignore */
+	}
+
+	// handle Off
+	if (!choice || choice === "Off") {
+		try {
+			if (rec.hls) {
+				rec.hls.subtitleTrack = -1;
+			}
+		} catch (e) {
+			console.error("hls.subtitleTrack off failed", e);
+		}
+		// ensure native tracks are disabled (done above)
+		updateCcBadge(rec);
+		return;
+	}
+
+	const parts = String(choice).split(":");
+	const kind = parts[0];
+	const num = parts.length > 1 ? Number(parts[1]) : NaN;
+
+	if (kind === "native" && !Number.isNaN(num)) {
+		try {
+			if (rec.video.textTracks && rec.video.textTracks[num])
+				rec.video.textTracks[num].mode = "showing";
+		} catch (e) {
+			console.debug("enable native textTrack failed", e);
+		}
+		try {
+			if (rec.hls) rec.hls.subtitleTrack = -1;
+		} catch (e) {
+			/* ignore */
+		}
+		updateCcBadge(rec);
+		return;
+	}
+
+	if (kind === "hls" && !Number.isNaN(num)) {
+		// set hls subtitleTrack explicitly to the requested id
+		try {
+			if (rec.hls) {
+				rec.hls.subtitleTrack = num;
+			}
+		} catch (e) {
+			console.error("set hls.subtitleTrack failed", e);
+		}
+
+		// After selecting hls subtitle, try to enable matching textTrack or inject fallback
+		setTimeout(() => {
+			try {
+				const tt = rec.video.textTracks || [];
+				const htrack =
+					rec.hls && rec.hls.subtitleTracks && rec.hls.subtitleTracks[num];
+				let matched = false;
+				if (htrack) {
+					for (let i = 0; i < tt.length; i++) {
+						const t = tt[i];
+						if (
+							(t.label && htrack.name && t.label === htrack.name) ||
+							(t.language && htrack.lang && t.language === htrack.lang)
+						) {
+							try {
+								t.mode = "showing";
+								matched = true;
+								break;
+							} catch {}
+						}
+					}
+				}
+				// If no match found, heuristically enable a textTrack that looks like a VTT (kind subtitles)
+				if (!matched && tt.length > 0) {
+					for (let i = 0; i < tt.length; i++) {
+						try {
+							if (tt[i].kind === "subtitles" || tt[i].kind === "captions") {
+								tt[i].mode = "showing";
+								matched = true;
+								break;
+							}
+						} catch {}
+					}
+				}
+				if (!matched && tt.length > 0) {
+					try {
+						tt[0].mode = "showing";
+						matched = true;
+					} catch {}
+				}
+				if (!matched) {
+					// no matching textTrack found for hls subtitle
+					// fallback: try to inject a <track> element from subtitleTracks entry
+					try {
+						const info = rec.subtitleTracks && rec.subtitleTracks[num];
+						if (info) {
+							const candidate =
+								info.url ||
+								info.uri ||
+								info.src ||
+								(info.attrs && (info.attrs.URI || info.attrs.URI)) ||
+								info._url ||
+								info._uri;
+							if (candidate) {
+								try {
+									const abs = new URL(candidate, rec.url).toString();
+									try {
+										if (rec._injectedVttTrack) {
+											rec._injectedVttTrack.remove();
+											rec._injectedVttTrack = null;
+										}
+									} catch {}
+									const trackEl = document.createElement("track");
+									trackEl.kind = "subtitles";
+									trackEl.label = info.name || info.lang || `sub-${num}`;
+									trackEl.srclang = info.lang || "";
+									trackEl.src = abs;
+									trackEl.default = false;
+									rec.video.appendChild(trackEl);
+									rec._injectedVttTrack = trackEl;
+									trackEl.addEventListener("load", () => {
+										try {
+											if (trackEl.track) trackEl.track.mode = "showing";
+											updateCcBadge(rec);
+										} catch (e) {
+											console.error("track load error", e);
+										}
+									});
+									matched = true;
+								} catch (e) {
+									console.error("fallback track injection failed", e);
+								}
+							}
+						}
+					} catch (e) {
+						console.log("fallback matching error", e);
+					}
+				}
+			} catch (e) {
+				console.log("error enabling textTrack after hls subtitle select", e);
+			}
+			updateCcBadge(rec);
+		}, 250);
+		return;
+	}
+
+	// Unknown format: fall back to disabling
+	try {
+		if (rec.hls) rec.hls.subtitleTrack = -1;
+	} catch {}
+	updateCcBadge(rec);
+}
+
+function updateCcBadge(rec) {
+	try {
+		const btn = rec.tile.querySelector('[data-action="cc"]');
+		if (!btn) return;
+		const badge = btn.querySelector(".cc-badge");
+		if (!badge) return;
+		const val = rec.subtitleChoice || "Off";
+		if (!val || val === "Off") {
+			badge.style.display = "none";
+		} else {
+			badge.style.display = "";
+			try {
+				if (typeof val === "string" && val.startsWith("native:")) {
+					const idx = parseInt(val.split(":")[1]);
+					badge.textContent =
+						(rec.video.textTracks && rec.video.textTracks[idx]?.label) || "Sub";
+				} else if (typeof val === "string" && val.startsWith("hls:")) {
+					// show HLS label if available
+					const idx = parseInt(val.split(":")[1]);
+					const info =
+						rec.hls && rec.hls.subtitleTracks && rec.hls.subtitleTracks[idx];
+					badge.textContent =
+						info && (info.name || info.lang) ? info.name || info.lang : "CC";
+				} else {
+					badge.textContent = "CC";
+				}
+			} catch {
+				badge.textContent = "CC";
+			}
+		}
+	} catch {}
+}
+
+// Show quality/resolution menu for Hls levels
+function showQualityMenu(rec, btn) {
+	if (!rec) return;
+	const existing = rec.tile.querySelector(".quality-menu");
+	if (existing) {
+		existing.remove();
+		return;
+	}
+	const menu = document.createElement("div");
+	menu.className = "menu quality-menu";
+	const ul = document.createElement("ul");
+	// Offer each level (sorted highest resolution first), then Auto at the bottom
+	const addItem = (label, cb, isActive) => {
+		const li = document.createElement("li");
+		const chk = document.createElement("span");
+		chk.className = "check";
+		chk.textContent = "✔";
+		const txt = document.createElement("span");
+		txt.textContent = label;
+		li.appendChild(chk);
+		li.appendChild(txt);
+		if (isActive) li.classList.add("active");
+		li.addEventListener("click", () => {
+			cb();
+			menu.remove();
+		});
+		ul.appendChild(li);
+	};
+	if (rec.levels && rec.levels.length) {
+		// sort by pixel count if available, otherwise by bitrate
+		const sorted = rec.levels.slice().sort((a, b) => {
+			const aPixels = (a.width || 0) * (a.height || 0);
+			const bPixels = (b.width || 0) * (b.height || 0);
+			if (aPixels || bPixels) return bPixels - aPixels;
+			return (b.bitrate || 0) - (a.bitrate || 0);
+		});
+		const current = rec.hls
+			? typeof rec.hls.currentLevel !== "undefined"
+				? rec.hls.currentLevel
+				: rec.currentLevel || -1
+			: rec.currentLevel || -1;
+		sorted.forEach((l) => {
+			const label =
+				l.width && l.height
+					? `${l.width}x${l.height} — ${Math.round(
+							(l.bitrate || 0) / 1000
+					  )} kbps`
+					: `${Math.round((l.bitrate || 0) / 1000)} kbps`;
+			addItem(
+				label,
+				() => {
+					try {
+						if (rec.hls) rec.hls.currentLevel = l.id;
+						rec.preferredQuality = l.id;
+					} catch {}
+				},
+				current === l.id
+			);
+		});
+	} else {
+		addItem("No quality info", () => {});
+	}
+	// Auto is always the last option
+	// mark Auto as active when currentLevel === -1
+	const current = rec.hls
+		? typeof rec.hls.currentLevel !== "undefined"
+			? rec.hls.currentLevel
+			: rec.currentLevel || -1
+		: rec.currentLevel || -1;
+	addItem(
+		"Auto",
+		() => {
+			try {
+				if (rec.hls) {
+					rec.hls.currentLevel = -1;
+				}
+				rec.preferredQuality = -1;
+			} catch {}
+		},
+		current === -1
+	);
+	menu.appendChild(ul);
+	menu.style.visibility = "hidden";
+	rec.tile.appendChild(menu);
+	positionMenuNearButton(menu, btn, rec.tile);
+	menu.style.visibility = "";
+	const off = (ev) => {
+		if (!menu.contains(ev.target)) {
+			menu.remove();
+			document.removeEventListener("click", off);
+		}
+	};
+	setTimeout(() => document.addEventListener("click", off));
+}
+
+// Position a menu element next to a clicked button, constrained to the tile bounds
+function positionMenuNearButton(menu, btn, tile) {
+	try {
+		// measure sizes in tile-local coordinates
+		const btnRect = btn.getBoundingClientRect();
+		const tileRect = tile.getBoundingClientRect();
+		// Use client sizes so we clamp to the tile's inner box
+		const tileW = tile.clientWidth;
+		const tileH = tile.clientHeight;
+		// measure menu size after it's been appended (may be hidden)
+		// allow compact sizing for the volume menu
+		const isVolume =
+			menu.classList &&
+			menu.classList.contains &&
+			menu.classList.contains("volume-menu");
+		// prefer the actual offset size, fall back to compact defaults for volume menus
+		const menuW = Math.round(menu.offsetWidth || (isVolume ? 34 : 220));
+		const menuH = Math.round(menu.offsetHeight || (isVolume ? 96 : 160));
+
+		// compute button position relative to tile top-left
+		const btnLeftRel = Math.round(btnRect.left - tileRect.left);
+		const btnRightRel = Math.round(btnRect.right - tileRect.left);
+		const btnTopRel = Math.round(btnRect.top - tileRect.top);
+		const btnBottomRel = Math.round(btnRect.bottom - tileRect.top);
+
+		// horizontal: for volume menus, center over the button; otherwise align right edge
+		let left;
+		if (isVolume) {
+			// try to center the menu horizontally over the button
+			const btnCenter = Math.round(
+				(btnRect.left + btnRect.right) / 2 - tileRect.left
+			);
+			left = btnCenter - Math.round(menuW / 2);
+		} else {
+			left = btnRightRel - menuW + 8;
+		}
+		if (left + menuW > tileW - 6) left = tileW - menuW - 6;
+		if (left < 6) left = 6;
+
+		// vertical: prefer above the button if there's enough space; otherwise below
+		const spaceAbove = btnTopRel;
+		let top;
+		if (spaceAbove >= menuH + 8) {
+			// place above
+			top = btnTopRel - menuH - 6;
+		} else {
+			// place below, but clamp to tile bottom
+			top = btnBottomRel + 6;
+			if (top + menuH > tileH - 6) top = Math.max(6, tileH - menuH - 6);
+		}
+
+		menu.style.right = "auto";
+		menu.style.left = `${left}px`;
+		menu.style.top = `${top}px`;
+		menu.style.minWidth = `${menuW}px`;
+		// ensure overflow doesn't show outside tile
+		menu.style.maxWidth = `${Math.max(120, tileW - 12)}px`;
+		menu.style.maxHeight = `${Math.max(40, tileH - 12)}px`;
+		menu.style.overflow = "auto";
+	} catch (e) {
+		/* fallback to CSS defaults */
+	}
+}
+
+function hardRefresh(rec) {
+	try {
+		if (rec.hls) {
+			rec.hls.stopLoad();
+			rec.hls.detachMedia();
+			rec.hls.attachMedia(rec.video);
+			rec.hls.loadSource(rec.url);
+		} else {
+			rec.video.pause();
+			const u = new URL(rec.url, window.location.href);
+			u.searchParams.set("_ts", Date.now().toString());
+			rec.video.src = "";
+			rec.video.load();
+			rec.video.src = u.toString();
+			rec.video.play().catch(() => {});
+		}
+	} catch {
+		setupPlayer(rec);
+	}
+}
+
+function showUnsupported(tile) {
+	const msg = document.createElement("div");
+	msg.style.position = "absolute";
+	msg.style.inset = "0";
+	msg.style.display = "grid";
+	msg.style.placeItems = "center";
+	msg.style.background = "linear-gradient(180deg,#0a0f15,#0c121a)";
+	msg.style.color = "#ffb4b4";
+	msg.style.fontSize = "14px";
+	msg.style.padding = "12px";
+	msg.textContent = "HLS not supported in this browser.";
+	tile.appendChild(msg);
+}
+
+/* Error handling helpers: preflight manifests, tile error UI, and HLS error handling
+           - preflightManifest(url): quick fetch to detect 404/CORS/non-m3u8 before creating Hls
+           - showTileError / clearTileErrorUI: overlay inside tile with Retry/Remove actions
+           - handleHlsError: centralized hls.js ERROR handler that uses soft/heavy recovery
+        */
+async function preflightManifest(url, timeoutMs = 5000) {
+	try {
+		const controller = new AbortController();
+		const id = setTimeout(() => controller.abort(), timeoutMs);
+		const resp = await fetch(url, {
+			method: "GET",
+			mode: "cors",
+			signal: controller.signal,
+		});
+		clearTimeout(id);
+		if (!resp.ok)
+			return { ok: false, status: resp.status, statusText: resp.statusText };
+		const text = await resp.text();
+		if (!text || !text.includes("#EXTM3U"))
+			return {
+				ok: false,
+				reason: "not-m3u8",
+				textSnippet: text && text.slice ? text.slice(0, 200) : "",
+			};
+		return { ok: true };
+	} catch (err) {
+		if (err && err.name === "AbortError")
+			return { ok: false, reason: "timeout" };
+		return { ok: false, reason: "network", error: err };
+	}
+}
+
+function clearTileErrorUI(rec) {
+	try {
+		if (!rec || !rec.tile) return;
+		const existing = rec.tile.querySelector(".tile-error");
+		if (existing) existing.remove();
+	} catch {}
+}
+
+function showTileError(rec, message = "Stream unavailable", options = {}) {
+	try {
+		if (!rec || !rec.tile) return;
+		clearTileErrorUI(rec);
+		// stop health checks and cancel pending reconnects while showing persistent error
+		try {
+			stopHealthCheck(rec);
+		} catch {}
+		try {
+			clearTimeout(rec._reconnectTimer);
+		} catch {}
+		try {
+			clearTimeout(rec._heavyTimer);
+		} catch {}
+		try {
+			if (rec._hideSpinner) rec._hideSpinner();
+		} catch {}
+		const overlay = document.createElement("div");
+		overlay.className = "tile-error";
+		overlay.style.position = "absolute";
+		overlay.style.inset = "0";
+		overlay.style.display = "flex";
+		overlay.style.flexDirection = "column";
+		overlay.style.gap = "8px";
+		overlay.style.alignItems = "center";
+		overlay.style.justifyContent = "center";
+		overlay.style.zIndex = "50";
+		overlay.style.background =
+			"linear-gradient(180deg, rgba(6,8,10,0.6), rgba(6,8,10,0.6))";
+		overlay.style.color = "#fff";
+		overlay.style.padding = "12px";
+		overlay.style.textAlign = "center";
+		overlay.style.pointerEvents = "auto";
+		const msg = document.createElement("div");
+		msg.textContent = message;
+		msg.style.maxWidth = "90%";
+		msg.style.fontSize = "13px";
+		const btnRow = document.createElement("div");
+		btnRow.style.display = "flex";
+		btnRow.style.gap = "8px";
+		const retry = document.createElement("button");
+		retry.textContent = options.retryLabel || "Retry";
+		retry.style.padding = "6px 10px";
+		const remove = document.createElement("button");
+		remove.textContent = options.removeLabel || "Remove";
+		remove.style.padding = "6px 10px";
+		btnRow.appendChild(retry);
+		btnRow.appendChild(remove);
+		overlay.appendChild(msg);
+		overlay.appendChild(btnRow);
+		rec.tile.appendChild(overlay);
+
+		retry.addEventListener("click", (e) => {
+			try {
+				clearTileErrorUI(rec);
+				rec.errorAttempts = 0;
+				setupPlayer(rec);
+			} catch {}
+		});
+		remove.addEventListener("click", (e) => {
+			try {
+				destroyTile(rec.tile, rec.url);
+				layoutGrid();
+			} catch {}
+		});
+	} catch {}
+}
+
+// Centralized HLS error handling that delegates to existing soft reconnects or performs a heavier rebuild
+function handleHlsError(rec, data) {
+	try {
+		if (!rec) return;
+		const { type, details, fatal } = data || {};
+		console.warn("HLS error", rec.url, type, details, fatal);
+		// non-fatal: try targeted nudges
+		if (!fatal) {
+			if (
+				details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
+				details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT ||
+				details === Hls.ErrorDetails.LEVEL_LOAD_ERROR
+			) {
+				// nudge loader
+				try {
+					if (rec.hls) rec.hls.startLoad();
+				} catch {}
+				scheduleReconnect(rec);
+				return;
+			}
+			// other non-fatal items: schedule a reconnect
+			scheduleReconnect(rec);
+			return;
+		}
+
+		// fatal errors: decide based on type
+		rec.errorAttempts = (rec.errorAttempts || 0) + 1;
+		const maxAttempts = 5;
+		if (rec.errorAttempts > maxAttempts) {
+			showTileError(
+				rec,
+				`Failed to play after ${rec.errorAttempts} attempts. ${details || ""}`
+			);
+			return;
+		}
+
+		if (type === Hls.ErrorTypes.MEDIA_ERROR) {
+			try {
+				if (rec.hls) {
+					rec.hls.recoverMediaError();
+				}
+			} catch (e) {
+				/* fallthrough to rebuild */
+			}
+			// give it a moment then soft heal
+			setTimeout(() => {
+				try {
+					softHeal(rec);
+				} catch {
+					setupPlayer(rec);
+				}
+			}, 800);
+			return;
+		}
+
+		if (type === Hls.ErrorTypes.NETWORK_ERROR) {
+			// network problems are often transient; schedule a heavier recovery with backoff
+			const base = 1000;
+			const delay = Math.min(
+				30000,
+				Math.round(
+					base *
+						Math.pow(2, Math.max(0, rec.errorAttempts - 1)) *
+						(0.8 + Math.random() * 0.4)
+				)
+			);
+			showTileError(
+				rec,
+				`Network error — retrying in ${Math.round(delay / 1000)}s...`
+			);
+			clearTimeout(rec._heavyTimer);
+			rec._heavyTimer = setTimeout(() => {
+				try {
+					if (rec.hls) {
+						rec.hls.destroy();
+						rec.hls = null;
+					}
+				} catch {}
+				try {
+					setupPlayer(rec);
+				} catch {}
+			}, delay);
+			return;
+		}
+
+		// default: attempt a rebuild after a short delay
+		const delay = 1000 * Math.min(8, rec.errorAttempts);
+		showTileError(
+			rec,
+			`Playback error — retrying in ${Math.round(delay / 1000)}s...`
+		);
+		clearTimeout(rec._heavyTimer);
+		rec._heavyTimer = setTimeout(() => {
+			try {
+				if (rec.hls) {
+					rec.hls.destroy();
+					rec.hls = null;
+				}
+				setupPlayer(rec);
+			} catch {}
+		}, delay);
+	} catch (e) {
+		console.error("handleHlsError failed", e);
+	}
+}
+
+function resetBackoff(rec) {
+	rec.backoffMs = 0;
+}
+
+// Do NOT reconnect while hidden; queue a soft heal instead
+function scheduleReconnect(rec) {
+	if (document.hidden) {
+		rec.needsHeal = true;
+		return;
+	}
+	rec.backoffMs = rec.backoffMs ? Math.min(rec.backoffMs * 2, 30000) : 1000;
+	clearTimeout(rec._reconnectTimer);
+	rec._reconnectTimer = setTimeout(() => softHeal(rec), rec.backoffMs);
+}
+
+// Soft heal: try to resume without reloading the source
+function softHeal(rec) {
+	try {
+		if (rec.hls) {
+			// Don’t stop/detach; just nudge loader/decoder
+			rec.hls.startLoad();
+			try {
+				rec.hls.recoverMediaError();
+			} catch {}
+		}
+		rec.video.play().catch(() => {});
+		resetBackoff(rec);
+	} catch {
+		// As a last resort, rebuild
+		setupPlayer(rec);
+	}
+}
+
+// Update the latency / buffered time UI on the tile
+function updateLatencyUI(rec) {
+	try {
+		if (!rec || !rec.tile) return;
+		const badge = rec.tile.querySelector(".latency-badge");
+		if (!badge) return;
+		// Compute approximate buffer/latency for live-ish streams
+		// Strategy: use hls.liveSyncPosition when available; otherwise approximate using buffered end - currentTime
+		let secs = NaN;
+		if (rec.hls && typeof rec.hls.liveSyncPosition === "number") {
+			// latency ~ liveSyncPosition - currentTime
+			const pos = rec.hls.liveSyncPosition || 0;
+			secs = Math.max(
+				0,
+				pos - (rec.video && rec.video.currentTime ? rec.video.currentTime : 0)
+			);
+		} else {
+			try {
+				const v = rec.video;
+				if (v && v.buffered && v.buffered.length) {
+					const end = v.buffered.end(v.buffered.length - 1);
+					secs = Math.max(0, end - (v.currentTime || 0));
+				}
+			} catch {}
+		}
+		if (!Number.isFinite(secs)) {
+			badge.textContent = "";
+			// remove live marker if we can't compute
+			try {
+				const btn = rec.tile.querySelector('[data-action="live"]');
+				if (btn) btn.classList.remove("is-live");
+			} catch {}
+			return;
+		}
+		const txt = `${secs.toFixed(1)}s`;
+		badge.textContent = txt;
+		// mark the live button when below threshold
+		try {
+			const btn = rec.tile.querySelector('[data-action="live"]');
+			if (btn) {
+				if (secs <= LIVE_THRESHOLD) btn.classList.add("is-live");
+				else btn.classList.remove("is-live");
+			}
+		} catch {}
+	} catch (e) {}
+}
+
+// Jump to live (seek near the live edge); for hls.js use hls.liveSyncPosition or set currentTime to buffered end
+function gotoLive(rec) {
+	try {
+		if (!rec || !rec.video) return;
+		// If HLS has API for live, set to live edge
+		if (rec.hls && typeof rec.hls.liveSyncPosition === "number") {
+			try {
+				const livePos = rec.hls.liveSyncPosition || 0;
+				// seek slightly ahead of liveSyncPosition to be at edge
+				rec.video.currentTime = Math.max(0, livePos - 0.3);
+				rec.video.play().catch(() => {});
+				return;
+			} catch {}
+		}
+		// Fallback: seek to buffered end minus small offset
+		try {
+			const v = rec.video;
+			if (v && v.buffered && v.buffered.length) {
+				const end = v.buffered.end(v.buffered.length - 1);
+				v.currentTime = Math.max(0, end - 0.5);
+				v.play().catch(() => {});
+			}
+		} catch {}
+	} catch (e) {}
+}
+
+function startHealthCheck(rec) {
+	rec.lastTime = 0;
+	rec.healthTimer = setInterval(() => {
+		if (document.hidden) return; // skip checks while hidden
+		const v = rec.video;
+		if (!v || v.readyState === 0) return;
+		const now = v.currentTime;
+		if (!v.paused && Math.abs(now - rec.lastTime) < 0.1) {
+			scheduleReconnect(rec);
+		}
+		rec.lastTime = now;
+	}, 10000);
+}
+function stopHealthCheck(rec) {
+	if (rec.healthTimer) clearInterval(rec.healthTimer);
+	rec.healthTimer = null;
+}
+
+// On visibility return, apply queued soft heals; do not reload sources
+document.addEventListener("visibilitychange", () => {
+	if (!document.hidden) {
+		for (const [, rec] of players.entries()) {
+			if (rec.needsHeal) {
+				rec.needsHeal = false;
+				softHeal(rec);
+			} else {
+				// Even if not queued, some browsers auto-pause; just try to resume
+				rec.video.play().catch(() => {});
+			}
+		}
+	}
+});
+
+// Only heal on actual network change (softly)
+window.addEventListener("online", () => {
+	for (const [, rec] of players.entries()) {
+		setTimeout(() => {
+			softHeal(rec);
+		}, Math.floor(Math.random() * 500));
+	}
+});
+
+function destroyTile(el, url) {
+	for (const [key, rec] of players.entries()) {
+		if (rec.tile === el) {
+			try {
+				stopHealthCheck(rec);
+				clearTimeout(rec._reconnectTimer);
+				clearTimeout(rec._heavyTimer);
+				clearInterval(rec._latencyTimer);
+				if (rec.hls) rec.hls.destroy();
+				rec.video.pause();
+				rec.video.src = "";
+				rec.video.load();
+			} catch {}
+			players.delete(key);
+			break;
+		}
+	}
+	// remove the matching entry by instanceId if available, fallback to URL
+	try {
+		const rec = getRecByTile(el);
+		if (rec && rec.instanceId) {
+			const idx = streamEntries.findIndex(
+				(e) => e.instanceId === rec.instanceId
+			);
+			if (idx !== -1) streamEntries.splice(idx, 1);
+		} else {
+			const idx = streamEntries.findIndex((e) => e.url === url);
+			if (idx !== -1) streamEntries.splice(idx, 1);
+		}
+	} catch {}
+	try {
+		saveList();
+	} catch {}
+	// previously removed unmute overlay; nothing to clean up
+	el.remove();
+	updateEmptyState();
+}
+
+function removeAllTiles() {
+	for (const [, rec] of players.entries()) {
+		try {
+			stopHealthCheck(rec);
+			clearTimeout(rec._reconnectTimer);
+			clearTimeout(rec._heavyTimer);
+			clearInterval(rec._latencyTimer);
+			if (rec.hls) rec.hls.destroy();
+			rec.video.pause();
+			rec.video.src = "";
+			rec.video.load();
+			rec.tile.remove();
+		} catch {}
+	}
+	players.clear();
+	streamEntries.splice(0, streamEntries.length);
+	try {
+		saveList();
+	} catch {}
+	updateEmptyState();
+}
+
+// Fit-all layout
+function layoutGrid() {
+	const tiles = [...grid.children].filter((el) =>
+		el.classList.contains("tile")
+	);
+	const n = tiles.length;
+	if (n === 0) {
+		grid.style.gridTemplateColumns = "1fr";
+		grid.style.gridAutoRows = "1fr";
+		return;
+	}
+	const gap =
+		parseFloat(getComputedStyle(grid).getPropertyValue("--gap")) || 10;
+	const vw = document.documentElement.clientWidth,
+		vh = window.innerHeight;
+	const toolbarRect = toolbar.getBoundingClientRect();
+	const availableW = vw - 2 * 6;
+	const availableH = vh - toolbarRect.height - 2 * 6;
+	const aspectW = 16,
+		aspectH = 9;
+	let bestCols = 1,
+		bestScale = 0;
+	for (let cols = 1; cols <= n; cols++) {
+		const rows = Math.ceil(n / cols);
+		const totalGapW = gap * (cols - 1),
+			totalGapH = gap * (rows - 1);
+		const cellW = (availableW - totalGapW) / cols,
+			cellH = (availableH - totalGapH) / rows;
+		if (cellW <= 0 || cellH <= 0) continue;
+		const scale = Math.min(cellW / aspectW, cellH / aspectH);
+		if (scale > bestScale) {
+			bestScale = scale;
+			bestCols = cols;
+		}
+	}
+	const tileW = Math.floor(aspectW * bestScale),
+		tileH = Math.floor(aspectH * bestScale);
+	grid.style.gridTemplateColumns = `repeat(${bestCols}, ${tileW}px)`;
+	grid.style.gridAutoRows = `${tileH}px`;
+}
+
+const ro = new ResizeObserver(() => layoutGrid());
+ro.observe(document.documentElement);
+ro.observe(grid);
+ro.observe(toolbar);
+window.addEventListener("orientationchange", () => setTimeout(layoutGrid, 50));
+window.addEventListener("resize", () => layoutGrid());
+
+function getRecByTile(tile) {
+	for (const [, rec] of players.entries()) if (rec.tile === tile) return rec;
+	return null;
+}
+
+(function init() {
+	const saved = loadList();
+	if (saved.length) {
+		saved.forEach((entry) => {
+			streamEntries.push(entry);
+			addStreamTile(entry.url, entry.instanceId);
+		});
+	} else {
+		updateEmptyState();
+		layoutGrid();
+	}
+})();
+
+// Threshold (seconds) below which we consider the stream 'live' (approximate, like YouTube)
+const LIVE_THRESHOLD = 3.0; // seconds

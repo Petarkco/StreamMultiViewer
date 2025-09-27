@@ -1,0 +1,444 @@
+:root {
+	--bg: #0c0f14;
+	--panel: #12161d;
+	--text: #e7edf5;
+	--muted: #9aa6b2;
+	--gap: 10px;
+
+	/* UI control sizing for icon-like buttons (icon-btn) */
+	--control-size: 32px; /* square control height */
+	--control-padding-x: 8px; /* horizontal padding for pill-style controls */
+	--control-radius: 6px;
+	--control-bg: rgba(0, 0, 0, 0.55);
+	--control-border: rgba(255, 255, 255, 0.08);
+}
+
+html,
+body {
+	height: 100%;
+	width: 100%;
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
+		Noto Sans, Arial;
+	overflow: hidden;
+}
+
+.wrap {
+	box-sizing: border-box;
+	width: 100vw;
+	height: 100vh;
+	padding: 6px;
+	display: grid;
+	grid-template-rows: auto 1fr;
+	gap: 6px;
+}
+
+.toolbar {
+	background: var(--panel);
+	border: 1px solid #1e2430;
+	padding: 4px 6px;
+	display: grid;
+	grid-template-columns: 1fr auto auto;
+	gap: 6px;
+	align-items: center;
+	height: 42px;
+	min-height: 42px;
+	max-height: 42px;
+}
+
+#urlInput {
+	width: 100%;
+	height: 100%;
+	padding: 6px 8px;
+	font-size: 14px;
+	background: #0f141b;
+	color: var(--text);
+	border: 1px solid #1e2430;
+	border-radius: 0;
+	box-sizing: border-box;
+}
+
+button {
+	padding: 4px 10px;
+	font-size: 13px;
+	height: 100%;
+	border: 1px solid #1e2430;
+	background: linear-gradient(180deg, #18202b, #131a24);
+	color: var(--text);
+	border-radius: 0;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+button:hover {
+	background: linear-gradient(180deg, #1b2431, #161e29);
+}
+
+button:active {
+	transform: translateY(1px);
+}
+
+.grid {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	display: grid;
+	gap: var(--gap);
+	align-content: start;
+	overflow: hidden;
+}
+
+.tile {
+	position: relative;
+	background: #000;
+	border: 1px solid #161c26;
+	border-radius: 0;
+	aspect-ratio: 16/9;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	isolation: isolate;
+	overflow: hidden;
+}
+
+.tile video {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	background: #000;
+	display: block;
+	border-radius: 0;
+}
+
+.hover-actions {
+	position: absolute;
+	right: 6px;
+	top: 6px;
+	display: flex;
+	gap: 6px;
+	z-index: 4;
+	opacity: 0;
+	transform: translateY(-4px);
+	transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tile:hover .hover-actions {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.icon-btn {
+	/* base control that other icon-like UI should inherit from */
+	box-sizing: border-box;
+	height: var(--control-size);
+	width: var(--control-size);
+	border-radius: var(--control-radius);
+	display: grid;
+	place-items: center;
+	background: var(--control-bg);
+	border: 1px solid var(--control-border);
+	cursor: pointer;
+	color: var(--text);
+	font-size: 18px;
+	line-height: 1;
+	position: relative;
+	transition: background 140ms ease, transform 80ms ease, box-shadow 140ms ease;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.icon-btn:hover {
+	/* subtle brighten and lift to match menu hover language */
+	background: linear-gradient(
+		180deg,
+		rgba(255, 255, 255, 0.02),
+		rgba(255, 255, 255, 0.01)
+	);
+	transform: translateY(-1px);
+	box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.icon-btn:active {
+	transform: translateY(0);
+}
+
+.bottom-actions {
+	position: absolute;
+	right: 6px;
+	bottom: 6px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	z-index: 4;
+	opacity: 0;
+	transform: translateY(4px);
+	transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tile:hover .bottom-actions {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.menu {
+	position: absolute;
+	right: 6px;
+	top: 42px;
+	/* match icon button visual language: semi-transparent dark panel */
+	background: rgba(0, 0, 0, 0.55);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	padding: 6px;
+	z-index: 1000;
+	min-width: 160px;
+	border-radius: 6px;
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+}
+
+.menu {
+	background: rgba(0, 0, 0, 0.55);
+	color: #fff;
+	padding: 6px 8px;
+	min-width: 180px;
+	border-radius: 6px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+	font-size: 13px;
+}
+
+.menu li:hover {
+	/* match icon hover visual */
+	background: rgba(255, 255, 255, 0.12);
+}
+
+/* Active selection uses the same subtle gradient as icon buttons */
+.menu li.active {
+	background: linear-gradient(180deg, #18202b, #131a24);
+	font-weight: 600;
+}
+
+.menu li .check {
+	width: 18px;
+	text-align: center;
+	margin-right: 8px;
+	color: #7fe3a7;
+	visibility: hidden;
+	font-weight: 700;
+}
+
+/* Make special compact menus (volume, cc, quality) visually consistent with icons */
+.menu.volume-menu,
+.menu.cc-menu,
+.menu.quality-menu {
+	background: rgba(0, 0, 0, 0.55);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	box-shadow: 0 6px 14px rgba(0, 0, 0, 0.6);
+	padding: 6px;
+	border-radius: 6px;
+}
+
+/* Compact list look for CC/quality menus: items appear as small pills */
+.menu.cc-menu ul,
+.menu.quality-menu ul {
+	padding: 4px;
+}
+
+.menu.cc-menu li,
+.menu.quality-menu li {
+	padding: 6px 8px;
+}
+
+/* Make check visible and styled like a small badge */
+.menu li .check {
+	visibility: hidden;
+	opacity: 0;
+	transition: opacity 120ms ease;
+}
+
+.menu li.active .check {
+	visibility: visible;
+	opacity: 1;
+}
+
+.menu li.active .check {
+	visibility: visible;
+}
+
+.menu li.active {
+	font-weight: 600;
+}
+
+.cc-badge {
+	display: none !important;
+	pointer-events: none;
+}
+
+/* CC icon uses the same .icon-btn rules; keep this selector available for future tweaks */
+.icon-btn[data-action="live"] {
+	/* pill variant that keeps the same height but allows extra horizontal room for text */
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: var(--control-size);
+	width: auto; /* allow it to expand to fit latency text */
+	min-width: var(--control-size);
+	padding: 0 var(--control-padding-x);
+	border-radius: calc(var(--control-radius) + 2px);
+	background: rgba(0, 0, 0, 0.45);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.35);
+	pointer-events: auto;
+	line-height: 1;
+	overflow: visible;
+}
+
+.icon-btn[data-action="live"] i {
+	font-size: 16px;
+	display: inline-block;
+}
+
+.icon-btn[data-action="live"] .latency-badge {
+	font-size: 12px;
+	color: #dbe7f5;
+	opacity: 0.95;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* listen (speech capture) control */
+.icon-btn[data-action="listen"] {
+	width: var(--control-size);
+	height: var(--control-size);
+	display: grid;
+	place-items: center;
+}
+.tile.listening { box-shadow: inset 0 0 0 3px rgba(43,121,255,0.06); }
+.icon-btn[data-action="listen"].active { background: linear-gradient(180deg, rgba(43,121,255,0.14), rgba(43,121,255,0.06)); }
+
+/* small dot used as the live indicator inside the live pill */
+.live-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #ffffff; /* default (not live) */
+	display: inline-block;
+	box-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+/* when considered live, make the dot red */
+.icon-btn[data-action="live"].is-live .live-dot {
+	background: #ff3b30; /* noticeable red */
+	box-shadow: 0 2px 6px rgba(255, 59, 48, 0.22);
+}
+
+.icon-btn[data-action="live"]:hover {
+	transform: translateY(-1px);
+	background: linear-gradient(
+		180deg,
+		rgba(255, 255, 255, 0.02),
+		rgba(255, 255, 255, 0.01)
+	);
+}
+
+video::-webkit-media-controls {
+	display: none !important;
+}
+
+/* Volume menu internal visuals */
+.menu.volume-menu div {
+	box-sizing: border-box;
+}
+
+.menu.volume-menu div > div {
+	background: rgba(0, 0, 0, 0.35);
+}
+
+/* make the volume menu box tightly sized to match the speaker icon */
+.menu.volume-menu {
+	padding: 0 !important;
+	box-shadow: none !important;
+	overflow: hidden;
+	border-radius: 4px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* ensure the container inside compact menus doesn't add unexpected gaps */
+.menu.volume-menu > div {
+	padding: 0;
+	margin: 0;
+}
+
+/* CSS classes used by the dynamically-created volume control */
+.volume-track {
+	border-radius: 10px;
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	background: linear-gradient(180deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.35));
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.volume-fill {
+	border-radius: 6px;
+	/* pale-blue / white fill so it reads with a white thumb */
+	background: linear-gradient(180deg, #f7fbff, #e6f4ff);
+	box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+}
+
+.volume-thumb {
+	/* white center dot with a blue ring */
+	background: #ffffff;
+	border: 2px solid #2b79ff;
+	box-shadow: 0 0 0 6px rgba(43, 121, 255, 0.08);
+}
+
+/* Buffering spinner centered in tile */
+.tile .spinner-overlay {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	pointer-events: none;
+	z-index: 20;
+	transition: opacity 180ms ease;
+	opacity: 0;
+}
+
+.tile .spinner-overlay.visible {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.spinner {
+	width: 56px;
+	height: 56px;
+	border-radius: 50%;
+	border: 4px solid rgba(255, 255, 255, 0.08);
+	border-top-color: rgba(255, 255, 255, 0.95);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+	animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+	from {
+		transform: rotate(0deg);
+	}
+
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.latency-badge {
+	color: var(--muted);
+	font-size: 11px;
+	min-width: 28px;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+	padding-left: 2px;
+	padding-right: 2px;
+}
