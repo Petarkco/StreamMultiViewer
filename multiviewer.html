@@ -110,17 +110,18 @@
         .tile video {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
             background: #000;
             display: block
         }
 
-        /* Controls overlay */
+        /* Controls overlay (right aligned) */
         .controls {
             position: absolute;
             inset: auto 0 0 0;
             height: var(--toolbar-h);
             display: flex;
+            justify-content: flex-end;
             align-items: center;
             gap: 8px;
             padding: 0 8px;
@@ -160,7 +161,7 @@
             line-height: 1
         }
 
-        /* Volume popover: stays open while moving from button to slider */
+        /* Volume popover */
         .vol-wrap {
             position: relative;
             display: flex;
@@ -170,7 +171,7 @@
         .vol-pop {
             position: absolute;
             bottom: 44px;
-            left: 0;
+            right: 0;
             display: none;
             flex-direction: column;
             gap: 8px;
@@ -255,7 +256,7 @@
             border: 1px solid #2b3e56;
             display: none;
             min-width: 240px;
-            z-index: 2
+            z-index: 3
         }
 
         .menu ul {
@@ -298,7 +299,6 @@
             font-size: 18px
         }
 
-        /* Subtitle styling (built-in and Cloud CC) */
         video::cue {
             background: rgba(0, 0, 0, .65);
             color: #fff;
@@ -306,28 +306,6 @@
             padding: .2em .4em
         }
 
-        .speaker-1::cue {
-            color: #aadfff
-        }
-
-        .speaker-2::cue {
-            color: #ffd4a3
-        }
-
-        .speaker-3::cue {
-            color: #c6ffa7
-        }
-
-        .hidden {
-            display: none !important
-        }
-
-        a.clean {
-            color: inherit;
-            text-decoration: none
-        }
-
-        /* Hide native controls even in fullscreen (best-effort) */
         video::-webkit-media-controls {
             display: none !important
         }
@@ -352,21 +330,14 @@
             const urlInput = document.getElementById('url');
             const autoRetry = document.getElementById('autoRetry');
 
-            // --- Cookie persistence (rolling 1 year) ---
-            function readCookie(name) {
-                return document.cookie.split('; ').find(row => row.startsWith(name + '='))?.split('=')[1] ?? '';
-            }
-            function saveStreams(urls) {
-                const value = encodeURIComponent(JSON.stringify(urls));
-                document.cookie = 'streams=' + value + '; Max-Age=' + (60 * 60 * 24 * 365) + '; Path=/; SameSite=Lax';
-            }
-            function loadStreams() {
-                try { return JSON.parse(decodeURIComponent(readCookie('streams') || '[]')) || [] } catch { return [] }
-            }
+            /* ---------- persistence (localStorage) ---------- */
+            const KEY = 'streams';
+            function saveStreams(urls) { try { localStorage.setItem(KEY, JSON.stringify(urls)); } catch { } }
+            function loadStreams() { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : []; } catch { return []; } }
 
-            // --- Layout: compute rows/cols that maximize tile area and fit all streams ---
+            /* ---------- responsive layout ---------- */
             function layout() {
-                const n = grid.children.length; if (!n) return;
+                const n = grid.children.length; if (!n) { grid.style.gridTemplateColumns = ''; grid.style.gridTemplateRows = ''; return; }
                 const vw = window.innerWidth - 20;
                 const vh = (window.innerHeight - document.querySelector('header').offsetHeight) - 20;
                 let best = { rows: 1, cols: n, area: 0 };
@@ -377,52 +348,55 @@
                     if (area > best.area) { best = { rows, cols, area }; }
                 }
                 grid.style.gridTemplateColumns = 'repeat(' + best.cols + ', 1fr)';
+                grid.style.gridTemplateRows = 'repeat(' + best.rows + ', 1fr)';
             }
             window.addEventListener('resize', layout);
 
-            // --- Players ---
+            /* ---------- players ---------- */
             const tiles = new Map(); // id -> state
             let idSeq = 0;
 
             function addStream(url) {
-                url = url.trim(); if (!url) return;
-                const id = 't' + (++idSeq);
+                url = (url || '').trim();
+                if (!url) return; // guard: no empty tiles
 
+                const id = 't' + (++idSeq);
                 const tile = document.createElement('div'); tile.className = 'tile'; tile.dataset.id = id; tile.tabIndex = 0;
+
                 const video = document.createElement('video');
                 video.playsInline = true; video.muted = true; video.autoplay = true; video.controls = false; video.disableRemotePlayback = true;
                 video.setAttribute('webkit-playsinline', '');
 
                 const badge = document.createElement('div'); badge.className = 'badge'; badge.textContent = 'Muted';
 
-                // Controls
+                // Controls (right aligned)
                 const controls = document.createElement('div'); controls.className = 'controls';
                 const ic = (name, title, extra = '') => {
                     const b = document.createElement('button'); b.className = 'icon ' + extra; b.title = title; b.innerHTML = '<span class="material-symbols-outlined">' + name + '</span>'; b.type = 'button'; return b;
                 };
 
-                // Single mute/unmute button (merged)
+                // single mute/unmute
                 const muteBtn = ic('volume_off', 'Mute/Unmute');
 
-                // Volume popover
+                // volume pop
                 const volWrap = document.createElement('div'); volWrap.className = 'vol-wrap';
                 const volBtn = ic('volume_up', 'Volume');
                 const volPop = document.createElement('div'); volPop.className = 'vol-pop';
                 const volSlider = document.createElement('input'); volSlider.type = 'range'; volSlider.min = '0'; volSlider.max = '1'; volSlider.step = '0.01'; volSlider.value = '0.8'; volSlider.className = 'vol-slider';
                 volPop.appendChild(volSlider); volWrap.appendChild(volBtn); volWrap.appendChild(volPop);
 
-                // CC button now opens a CC menu (auto-translate + embedded languages + off)
+                // CC menu button
                 const ccBtn = ic('subtitles', 'Captions & translate');
 
-                // Cog menu (quality)
-                const cogBtn = ic('settings', 'Quality & settings');
+                // quality menu
+                const cogBtn = ic('settings', 'Quality');
                 const openBtn = ic('open_in_new', 'Open in new tab');
                 const refreshBtn = ic('refresh', 'Reload stream');
                 const closeBtn = ic('close', 'Remove stream', 'danger');
 
                 controls.append(muteBtn, volWrap, ccBtn, cogBtn, openBtn, refreshBtn, closeBtn);
 
-                // Error overlay
+                // overlays / menus
                 const error = document.createElement('div'); error.className = 'error';
                 error.innerHTML = '<div class="panel">'
                     + '<div id="' + id + '-errmsg">Stream error. The source may be offline.</div>'
@@ -431,10 +405,7 @@
                     + '  <button class="btn" data-act="toggle-auto"><span class="material-symbols-outlined">autorenew</span> Auto-refresh</button>'
                     + '</div></div>';
 
-                // Quality menu
                 const qMenu = document.createElement('div'); qMenu.className = 'menu'; qMenu.innerHTML = '<ul id="' + id + '-qlist"><li>Loading levels…</li></ul>';
-
-                // CC menu
                 const ccMenu = document.createElement('div'); ccMenu.className = 'menu'; ccMenu.innerHTML = '<ul id="' + id + '-cclist"></ul>';
 
                 tile.append(video, badge, controls, error, qMenu, ccMenu);
@@ -448,21 +419,15 @@
                 };
                 tiles.set(id, state);
 
-                // Player + wiring
                 setupPlayer(id, state);
 
                 tile.addEventListener('dblclick', () => toggleFullscreen(tile));
 
-                // Mute/unmute (single button)
                 function updateMuteIcon() { muteBtn.firstElementChild.textContent = video.muted ? 'volume_off' : 'volume_up'; }
-                muteBtn.addEventListener('click', () => {
-                    video.muted = !video.muted;
-                    badge.textContent = video.muted ? 'Muted' : 'Audio';
-                    updateMuteIcon();
-                });
+                muteBtn.addEventListener('click', () => { video.muted = !video.muted; badge.textContent = video.muted ? 'Muted' : 'Audio'; updateMuteIcon(); });
                 updateMuteIcon();
 
-                // Volume: keep popover visible while moving to slider
+                // volume pop stays while you move to slider
                 let volHoverTimer = null;
                 function showVol() { clearTimeout(volHoverTimer); volPop.style.display = 'flex'; controls.classList.add('show'); }
                 function hideVol() { volHoverTimer = setTimeout(() => { volPop.style.display = 'none'; controls.classList.remove('show'); }, 250); }
@@ -473,20 +438,10 @@
 
                 volSlider.addEventListener('input', () => {
                     video.volume = parseFloat(volSlider.value);
-                    if (video.muted && video.volume > 0) {
-                        video.muted = false; updateMuteIcon(); badge.textContent = 'Audio';
-                    }
+                    if (video.muted && video.volume > 0) { video.muted = false; updateMuteIcon(); badge.textContent = 'Audio'; }
                 });
 
-                // CC button -> open menu (rebuilt each time to reflect available tracks)
-                ccBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    buildCcMenu(state);
-                    ccMenu.classList.toggle('open');
-                    qMenu.classList.remove('open');
-                });
-
-                // Cog menu toggle
+                ccBtn.addEventListener('click', (e) => { e.stopPropagation(); buildCcMenu(state); ccMenu.classList.toggle('open'); qMenu.classList.remove('open'); });
                 cogBtn.addEventListener('click', (e) => { e.stopPropagation(); qMenu.classList.toggle('open'); ccMenu.classList.remove('open'); });
                 document.addEventListener('click', () => { qMenu.classList.remove('open'); ccMenu.classList.remove('open'); });
 
@@ -509,8 +464,6 @@
 
             function setupPlayer(id, state) {
                 const { video, url, type } = state;
-
-                // Cleanup
                 if (state.hls) { state.hls.destroy(); state.hls = null; }
                 if (state.dash) { state.dash.reset(); state.dash = null; }
                 setError(state, false);
@@ -519,13 +472,11 @@
                     if (Hls.isSupported()) {
                         const hls = new Hls({ enableWorker: true, backBufferLength: 90, startLevel: -1 });
                         state.hls = hls;
-                        // ensure subtitles are surfaced
                         hls.subtitleDisplay = true;
-
-                        hls.on(Hls.Events.ERROR, (evt, data) => handleHlsError(state, data));
+                        hls.on(Hls.Events.ERROR, (_, data) => handleHlsError(state, data));
                         hls.on(Hls.Events.MANIFEST_PARSED, () => {
                             buildLevelsMenu(state, hls.levels?.map((l, i) => ({ i, label: levelLabel(l) })) || [], (lvl) => { hls.currentLevel = lvl; });
-                            if (hls.levels && hls.levels.length) { hls.currentLevel = hls.levels.length - 1; } // default max
+                            if (hls.levels && hls.levels.length) { hls.currentLevel = hls.levels.length - 1; }
                             autoplay(video);
                         });
                         hls.attachMedia(video);
@@ -558,152 +509,78 @@
 
                 video.addEventListener('play', () => setError(state, false));
                 video.addEventListener('stalled', () => setError(state, true, 'Playback stalled'));
-
                 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && video.paused) { video.play().catch(() => { }); } });
             }
 
             function autoplay(video) { video.play().catch(() => { }); }
-
-            function levelLabel(l) {
-                const p = []; if (l.height) p.push(l.height + 'p'); if (l.bitrate) p.push(Math.round(l.bitrate / 1000) + ' kbps'); return p.join(' · ') || 'Level';
-            }
+            function levelLabel(l) { const p = []; if (l.height) p.push(l.height + 'p'); if (l.bitrate) p.push(Math.round(l.bitrate / 1000) + ' kbps'); return p.join(' · ') || 'Level'; }
 
             function buildLevelsMenu(state, levels, onPick) {
                 const ul = state.qMenu.querySelector('ul');
                 ul.innerHTML = '';
-                const mk = (label, val, checked = false) => {
-                    const li = document.createElement('li');
-                    li.innerHTML = '<span>' + label + '</span>' + (checked ? '<span class="check">✓</span>' : '');
-                    li.dataset.val = val;
-                    li.addEventListener('click', (e) => { e.stopPropagation(); onPick(val); state.qMenu.classList.remove('open'); });
-                    return li;
-                };
+                const mk = (label, val) => { const li = document.createElement('li'); li.innerHTML = '<span>' + label + '</span>'; li.addEventListener('click', (e) => { e.stopPropagation(); onPick(val); state.qMenu.classList.remove('open'); }); return li; };
                 ul.appendChild(mk('Auto', -1));
                 levels.forEach(l => { if (l.i !== -1) ul.appendChild(mk(l.label, l.i)); });
             }
 
-            // CC menu: Auto-translate (detect) / Off / Embedded languages
             function buildCcMenu(state) {
                 const v = state.video;
                 const ul = state.ccMenu.querySelector('ul');
                 ul.innerHTML = '';
 
-                // Helper to close menu
                 const close = () => state.ccMenu.classList.remove('open');
 
-                // Auto-translate (Cloud CC) at top
                 const autoItem = document.createElement('li');
                 autoItem.innerHTML = '<span>Auto-translate (detect)</span>';
-                autoItem.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    // start Cloud CC (or stop if already on)
-                    if (state.cloudCC) { stopCloudCC(state); } else { startCloudCC(state); }
-                    // also turn off embedded tracks when enabling cloud CC
-                    if (state.cloudCC) { setEmbeddedTrack(state, -1); }
-                    close();
-                });
+                autoItem.addEventListener('click', (e) => { e.stopPropagation(); if (state.cloudCC) { stopCloudCC(state); } else { startCloudCC(state); setEmbeddedTrack(state, -1); } close(); });
                 ul.appendChild(autoItem);
 
-                // Separator
-                const sep = document.createElement('div'); sep.className = 'sep';
-                ul.appendChild(sep);
+                const sep = document.createElement('div'); sep.className = 'sep'; ul.appendChild(sep);
 
-                // Off
                 const off = document.createElement('li');
                 off.innerHTML = '<span>Off</span>';
-                off.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    stopCloudCC(state);
-                    setEmbeddedTrack(state, -1);
-                    close();
-                });
+                off.addEventListener('click', (e) => { e.stopPropagation(); stopCloudCC(state); setEmbeddedTrack(state, -1); close(); });
                 ul.appendChild(off);
 
-                // Embedded captions section (languages)
                 const tracks = Array.from(v.textTracks || []).filter(t => t.kind === 'subtitles' || t.kind === 'captions');
                 if (tracks.length) {
-                    const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = 'Embedded captions';
-                    ul.appendChild(hint);
-
+                    const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = 'Embedded captions'; ul.appendChild(hint);
                     tracks.forEach((t, idx) => {
                         const li = document.createElement('li');
                         const label = (t.label || t.language || 'Track ' + (idx + 1));
                         const active = (t.mode === 'showing');
                         li.innerHTML = '<span>' + label + '</span>' + (active ? '<span class="check">✓</span>' : '');
-                        li.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            stopCloudCC(state);
-                            setEmbeddedTrack(state, idx);
-                            close();
-                        });
+                        li.addEventListener('click', (e) => { e.stopPropagation(); stopCloudCC(state); setEmbeddedTrack(state, idx); close(); });
                         ul.appendChild(li);
                     });
                 } else {
-                    const none = document.createElement('div'); none.className = 'hint'; none.textContent = 'No embedded captions detected';
-                    ul.appendChild(none);
+                    const none = document.createElement('div'); none.className = 'hint'; none.textContent = 'No embedded captions detected'; ul.appendChild(none);
                 }
             }
 
             function setEmbeddedTrack(state, index) {
-                const v = state.video;
-                const tracks = v.textTracks || [];
-                for (let i = 0; i < tracks.length; i++) {
-                    const show = (i === index && index >= 0);
-                    tracks[i].mode = show ? 'showing' : 'hidden';
-                }
+                const tracks = state.video.textTracks || [];
+                for (let i = 0; i < tracks.length; i++) { tracks[i].mode = (i === index && index >= 0) ? 'showing' : 'hidden'; }
                 state.ccOn = index >= 0;
             }
 
+            // Cloud CC plumbing (needs backend at ws:///cloud-cc)
             function startCloudCC(state) {
                 if (state.cloudCC) return;
-                const v = state.video;
-                if (!v.captureStream) { alert('Your browser does not support captureStream on video.'); return; }
+                const v = state.video; if (!v.captureStream) { alert('Your browser does not support captureStream on video.'); return; }
                 const ms = v.captureStream(); const audioTrack = ms.getAudioTracks()[0]; if (!audioTrack) { alert('No audio track available to transcribe.'); return; }
-                const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
-                const proc = ctx.createScriptProcessor(4096, 1, 1);
+                const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(new MediaStream([audioTrack])); const proc = ctx.createScriptProcessor(4096, 1, 1);
                 src.connect(proc); proc.connect(ctx.destination);
-
-                if (!state.textTrack) { state.textTrack = state.video.addTextTrack('subtitles', 'Cloud CC', 'en'); }
+                if (!state.textTrack) { state.textTrack = v.addTextTrack('subtitles', 'Cloud CC', 'en'); }
                 state.textTrack.mode = 'showing';
-
                 const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/cloud-cc';
                 const ws = new WebSocket(wsUrl); ws.binaryType = 'arraybuffer';
-
-                const cc = {
-                    stop() {
-                        try { ws.close(); } catch (e) { }
-                        try { proc.disconnect(); } catch (e) { }
-                        try { src.disconnect(); } catch (e) { }
-                        try { ctx.close(); } catch (e) { }
-                    }
-                };
+                const cc = { stop() { try { ws.close(); } catch { } try { proc.disconnect(); } catch { } try { src.disconnect(); } catch { } try { ctx.close(); } catch { } } };
                 state.cloudCC = cc;
-
-                ws.onmessage = (ev) => {
-                    try {
-                        const msg = JSON.parse(ev.data);
-                        if (msg.type === 'cc' && msg.text) {
-                            const now = state.video.currentTime;
-                            const cue = new VTTCue(now, now + 4, msg.text);
-                            state.textTrack.addCue(cue);
-                        }
-                    } catch (e) { }
-                };
-
-                proc.onaudioprocess = (e) => {
-                    const buf = e.inputBuffer.getChannelData(0);
-                    const rate = ctx.sampleRate / 16000; const outLen = Math.floor(buf.length / rate);
-                    const out = new Int16Array(outLen);
-                    for (let i = 0; i < outLen; i++) { const x = buf[Math.floor(i * rate)] || 0; out[i] = Math.max(-1, Math.min(1, x)) * 0x7fff; }
-                    if (ws.readyState === 1) ws.send(out.buffer);
-                };
+                ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.type === 'cc' && m.text) { const now = v.currentTime; state.textTrack.addCue(new VTTCue(now, now + 4, m.text)); } } catch { } };
+                proc.onaudioprocess = (e) => { const buf = e.inputBuffer.getChannelData(0); const rate = ctx.sampleRate / 16000; const outLen = Math.floor(buf.length / rate); const out = new Int16Array(outLen); for (let i = 0; i < outLen; i++) { const x = buf[Math.floor(i * rate)] || 0; out[i] = Math.max(-1, Math.min(1, x)) * 0x7fff; } if (ws.readyState === 1) ws.send(out.buffer); };
             }
-
-            function stopCloudCC(state) {
-                if (!state.cloudCC) return;
-                try { state.cloudCC.stop(); } catch (e) { }
-                state.cloudCC = null;
-            }
+            function stopCloudCC(state) { if (!state.cloudCC) return; try { state.cloudCC.stop(); } catch { } state.cloudCC = null; }
 
             function handleHlsError(state, data) {
                 const fatal = data?.fatal; const details = data?.details; let msg = 'HLS error: ' + (details || 'Unknown');
@@ -713,9 +590,7 @@
                         case Hls.ErrorTypes.MEDIA_ERROR: msg += ' (media)'; state.hls?.recoverMediaError(); break;
                         default: setError(state, true, msg); break;
                     }
-                } else {
-                    setError(state, true, msg);
-                }
+                } else { setError(state, true, msg); }
             }
 
             function setError(state, show, message) {
@@ -729,40 +604,30 @@
                     if (!state.retry.on && state.retry.timer) { clearTimeout(state.retry.timer); state.retry.timer = null; state.retry.delay = 2000; }
                 }
             }
-
             function scheduleRetry(state) {
                 if (state.retry.timer) clearTimeout(state.retry.timer);
-                state.retry.timer = setTimeout(() => {
-                    reload(state.root.dataset.id);
-                    state.retry.delay = Math.min(state.retry.delay * 1.6, 30000);
-                    if (state.retry.on) scheduleRetry(state);
-                }, state.retry.delay);
+                state.retry.timer = setTimeout(() => { reload(state.root.dataset.id); state.retry.delay = Math.min(state.retry.delay * 1.6, 30000); if (state.retry.on) scheduleRetry(state); }, state.retry.delay);
             }
 
             function reload(id) { const s = tiles.get(id); if (!s) return; setupPlayer(id, s); }
+            function removeTile(id) { const s = tiles.get(id); if (!s) return; if (s.hls) s.hls.destroy(); if (s.dash) s.dash.reset(); s.root.remove(); tiles.delete(id); layout(); persist(); }
+            function toggleFullscreen(el) { if (document.fullscreenElement) { document.exitFullscreen().catch(() => { }); } else { el.requestFullscreen?.().catch(() => { }); } }
 
-            function removeTile(id) {
-                const s = tiles.get(id); if (!s) return;
-                if (s.hls) s.hls.destroy();
-                if (s.dash) s.dash.reset();
-                s.root.remove(); tiles.delete(id); layout(); persist();
-            }
-
-            function toggleFullscreen(el) {
-                if (document.fullscreenElement) { document.exitFullscreen().catch(() => { }); }
-                else { el.requestFullscreen?.().catch(() => { }); }
-            }
-
-            // Persistence
+            /* ---------- persist/restore ---------- */
             function persist() { saveStreams(Array.from(tiles.values()).map(s => s.url)); }
-            function restore() { loadStreams().forEach(addStream); }
+            function restore() { const arr = loadStreams(); if (Array.isArray(arr) && arr.length) { arr.forEach(addStream); } }
 
-            // Add URL
-            function addFromInput() { addStream(urlInput.value); urlInput.value = ''; urlInput.focus(); }
+            /* ---------- add URL ---------- */
+            function addFromInput() {
+                const u = (urlInput.value || '').trim();
+                if (!u) return;
+                addStream(u);
+                urlInput.value = ''; urlInput.focus();
+            }
             urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') { addFromInput(); } });
             addBtn.addEventListener('click', addFromInput);
 
-            // Start
+            /* ---------- start ---------- */
             restore();
         })();
     </script>
