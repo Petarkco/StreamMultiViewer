@@ -9,8 +9,12 @@
     <!-- hls.js -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
+    <!-- Font Awesome Free (icons) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+
     <style>
-        /* Keep original feel: minimal styles; only add tiny helpers for new UI bits */
+        /* Keep original feel: minimal styling; only small helpers for icons, CC menu, errors, volume popover */
 
         html,
         body {
@@ -30,20 +34,23 @@
             background: #1a1a1a;
         }
 
-        header input[type="url"] {
-            flex: 1;
-            padding: 8px;
-            background: #0d0d0d;
-            color: #ddd;
-            border: 1px solid #2a2a2a;
-        }
-
         header button {
             padding: 8px 12px;
             background: #222;
             color: #ddd;
             border: 1px solid #2a2a2a;
             cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        header input[type="url"] {
+            flex: 1;
+            padding: 8px;
+            background: #0d0d0d;
+            color: #ddd;
+            border: 1px solid #2a2a2a;
         }
 
         #grid {
@@ -73,7 +80,7 @@
             object-fit: contain;
         }
 
-        /* Tiny control strip pinned at bottom; matches minimal aesthetic */
+        /* Control strip at bottom */
         .controls {
             position: absolute;
             left: 6px;
@@ -104,6 +111,14 @@
             color: #ddd;
             cursor: pointer;
             font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn.icon {
+            padding: 4px 8px;
+            width: auto;
         }
 
         .tag {
@@ -136,6 +151,13 @@
             justify-content: space-between;
             gap: 8px;
             margin-bottom: 4px;
+            align-items: center;
+        }
+
+        .error-box .row strong {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .error-box button {
@@ -145,6 +167,9 @@
             font-size: 11px;
             padding: 2px 6px;
             cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .error-box pre {
@@ -214,8 +239,8 @@
 
 <body>
     <header>
-        <button id="addBtn">Add</button>
-        <button id="clearBtn">Clear All</button>
+        <button id="addBtn" title="Add stream"><i class="fa-solid fa-plus"></i> Add</button>
+        <button id="clearBtn" title="Remove all streams"><i class="fa-solid fa-trash-can"></i> Clear All</button>
         <input id="urlInput" type="url" placeholder="Paste an HLS .m3u8 and press Add" />
     </header>
 
@@ -256,28 +281,35 @@
             const right = document.createElement('div');
             right.className = 'right';
 
-            // Mute/Unmute + Volume on hover
+            // Mute/Unmute + Volume on hover (icons)
             const volWrap = document.createElement('div');
             volWrap.className = 'vol-wrap';
+
             const muteBtn = document.createElement('button');
-            muteBtn.className = 'btn';
-            muteBtn.textContent = 'Mute';
+            muteBtn.className = 'btn icon';
+            muteBtn.innerHTML = '<i class="fa-solid fa-volume-high"></i>';
+
             const volPop = document.createElement('div');
             volPop.className = 'vol-pop';
             volPop.innerHTML = '<input type="range" min="0" max="1" step="0.05" value="0.8">';
             const volSlider = volPop.querySelector('input');
+
             video.volume = parseFloat(volSlider.value);
             volSlider.addEventListener('input', () => {
                 video.volume = parseFloat(volSlider.value);
                 if (video.volume === 0 && !video.muted) {
                     video.muted = true;
-                    muteBtn.textContent = 'Unmute';
+                    muteBtn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
                 }
             });
+
             muteBtn.addEventListener('click', () => {
                 video.muted = !video.muted;
-                muteBtn.textContent = video.muted ? 'Unmute' : 'Mute';
+                muteBtn.innerHTML = video.muted
+                    ? '<i class="fa-solid fa-volume-xmark"></i>'
+                    : '<i class="fa-solid fa-volume-high"></i>';
             });
+
             volWrap.appendChild(muteBtn);
             volWrap.appendChild(volPop);
             left.appendChild(volWrap);
@@ -288,26 +320,29 @@
             tag.textContent = url;
             left.appendChild(tag);
 
-            // CC controls (default OFF)
+            // CC controls (default OFF) with icon
             const ccWrap = document.createElement('div');
             ccWrap.className = 'cc-wrap';
+
             const ccBtn = document.createElement('button');
             ccBtn.className = 'btn';
-            ccBtn.textContent = 'CC: Off';
+            ccBtn.innerHTML = '<i class="fa-solid fa-closed-captioning"></i> Off';
+
             const ccMenu = document.createElement('div');
             ccMenu.className = 'cc-menu';
             ccWrap.appendChild(ccBtn);
             ccWrap.appendChild(ccMenu);
+
             ccBtn.addEventListener('click', () => ccWrap.classList.toggle('open'));
             document.addEventListener('click', (e) => {
                 if (!ccWrap.contains(e.target)) ccWrap.classList.remove('open');
             });
             right.appendChild(ccWrap);
 
-            // Remove tile
+            // Remove tile (trash icon)
             const rm = document.createElement('button');
             rm.className = 'btn';
-            rm.textContent = 'Remove';
+            rm.innerHTML = '<i class="fa-solid fa-trash-can"></i> Remove';
             rm.addEventListener('click', () => {
                 if (hls) { try { hls.destroy(); } catch (e) { } }
                 tile.remove();
@@ -317,10 +352,10 @@
             controls.appendChild(left);
             controls.appendChild(right);
 
-            // Error box
+            // Error box with warning icon
             const err = document.createElement('div');
             err.className = 'error-box';
-            err.innerHTML = '<div class="row"><strong>Stream Errors</strong><button type="button" data-close>Close</button></div><pre></pre>';
+            err.innerHTML = '<div class="row"><strong><i class="fa-solid fa-triangle-exclamation"></i> Stream Errors</strong><button type="button" data-close><i class="fa-solid fa-xmark"></i> Close</button></div><pre></pre>';
             const errPre = err.querySelector('pre');
             err.querySelector('[data-close]').addEventListener('click', () => { err.style.display = 'none'; });
 
@@ -394,7 +429,6 @@
         }
 
         function setupHlsCaptionsMenu(hls, menu, btn) {
-            // Build menu with Off + available subtitleTracks (if any)
             const tracks = Array.isArray(hls.subtitleTracks) ? hls.subtitleTracks : [];
             hls.subtitleDisplay = false;
             hls.subtitleTrack = -1;
@@ -406,7 +440,7 @@
             off.addEventListener('click', () => {
                 hls.subtitleDisplay = false;
                 hls.subtitleTrack = -1;
-                btn.textContent = 'CC: Off';
+                btn.innerHTML = '<i class="fa-solid fa-closed-captioning"></i> Off';
                 menu.parentElement.classList.remove('open');
             });
             menu.appendChild(off);
@@ -419,13 +453,12 @@
                 it.addEventListener('click', () => {
                     hls.subtitleDisplay = true;
                     hls.subtitleTrack = i;
-                    btn.textContent = 'CC: ' + lab;
+                    btn.innerHTML = '<i class="fa-solid fa-closed-captioning"></i> ' + lab;
                     menu.parentElement.classList.remove('open');
                 });
                 menu.appendChild(it);
             });
 
-            // In case tracks appear later
             hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
                 setupHlsCaptionsMenu(hls, menu, btn);
             });
@@ -443,7 +476,7 @@
             off.textContent = 'Off';
             off.addEventListener('click', () => {
                 textTracks.forEach(t => t.mode = 'disabled');
-                btn.textContent = 'CC: Off';
+                btn.innerHTML = '<i class="fa-solid fa-closed-captioning"></i> Off';
                 menu.parentElement.classList.remove('open');
             });
             menu.appendChild(off);
@@ -455,19 +488,20 @@
                 it.textContent = lab;
                 it.addEventListener('click', () => {
                     textTracks.forEach((tt, j) => { tt.mode = (i === j) ? 'showing' : 'disabled'; });
-                    btn.textContent = 'CC: ' + lab;
+                    btn.innerHTML = '<i class="fa-solid fa-closed-captioning"></i> ' + lab;
                     menu.parentElement.classList.remove('open');
                 });
                 menu.appendChild(it);
             });
 
-            // If tracks added later
-            video.textTracks && (video.textTracks.onaddtrack = () => {
-                setupNativeCaptionsMenu(video, menu, btn);
-            });
+            if (video.textTracks) {
+                video.textTracks.onaddtrack = () => {
+                    setupNativeCaptionsMenu(video, menu, btn);
+                };
+            }
         }
 
-        // Optional: allow quick test via hash
+        // Optional: quick test via hash
         // multiviewer.html#https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
         window.addEventListener('DOMContentLoaded', () => {
             const h = decodeURIComponent(location.hash.replace(/^#/, '')).trim();
