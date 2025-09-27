@@ -3,108 +3,105 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Responsive Multi-Stream Viewer</title>
-
-    <!-- Icons: Google Material Symbols -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:FILL@0..1&opsz=24..48,wght@100..700,GRAD@-25..200"
-        rel="stylesheet">
-
-    <!-- HLS.js and dash.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js"></script>
-
+    <title>Multi HLS Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet" />
     <style>
         :root {
-            --bg: #0b0f14;
-            --panel: #121820;
-            --text: #e6eef8;
-            --muted: #8fa3b8;
-            --accent: #3ea6ff;
-            --danger: #ff5470;
-            --ok: #45d483;
-            --tile-gap: 10px;
-            --toolbar-h: 40px;
-            --radius: 14px;
-            --overlay-bg: rgba(6, 10, 14, .75);
-        }
-
-        * {
-            box-sizing: border-box
+            --bg: #0c0f14;
+            --panel: #12161d;
+            --text: #e7edf5;
+            --muted: #9aa6b2;
+            --gap: 10px;
         }
 
         html,
         body {
-            height: 100%
-        }
-
-        body {
+            height: 100%;
+            width: 100%;
             margin: 0;
             background: var(--bg);
             color: var(--text);
-            font: 14px system-ui, Segoe UI, Roboto, Inter, Arial
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial;
+            overflow: hidden
         }
 
-        header {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            padding: 10px;
-            background: var(--panel);
-            position: sticky;
-            top: 0;
-            z-index: 5
-        }
-
-        header input[type=url] {
-            flex: 1;
-            min-width: 200px;
-            border: 1px solid #223040;
-            background: #0e141c;
-            color: var(--text);
-            padding: 10px 12px;
-            border-radius: 10px
-        }
-
-        header .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            border: 1px solid #26364a;
-            background: #13202e;
-            color: var(--text);
-            padding: 10px 12px;
-            border-radius: 10px;
-            cursor: pointer
-        }
-
-        header .btn:hover {
-            border-color: #345276
-        }
-
-        header label {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            color: var(--muted)
-        }
-
-        #grid {
+        .wrap {
+            box-sizing: border-box;
+            width: 100vw;
+            height: 100vh;
+            padding: 6px;
             display: grid;
-            gap: var(--tile-gap);
-            height: calc(100dvh - 60px);
-            padding: 10px;
-            grid-auto-rows: 1fr
+            grid-template-rows: auto 1fr;
+            gap: 6px
+        }
+
+        .toolbar {
+            background: var(--panel);
+            border: 1px solid #1e2430;
+            padding: 4px 6px;
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 6px;
+            align-items: center;
+            height: 42px;
+            min-height: 42px;
+            max-height: 42px
+        }
+
+        #urlInput {
+            width: 100%;
+            height: 100%;
+            padding: 6px 8px;
+            font-size: 14px;
+            background: #0f141b;
+            color: var(--text);
+            border: 1px solid #1e2430;
+            border-radius: 0;
+            box-sizing: border-box
+        }
+
+        button {
+            padding: 4px 10px;
+            font-size: 13px;
+            height: 100%;
+            border: 1px solid #1e2430;
+            background: linear-gradient(180deg, #18202b, #131a24);
+            color: var(--text);
+            border-radius: 0;
+            cursor: pointer;
+            white-space: nowrap
+        }
+
+        button:hover {
+            background: linear-gradient(180deg, #1b2431, #161e29)
+        }
+
+        button:active {
+            transform: translateY(1px)
+        }
+
+        .grid {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            gap: var(--gap);
+            align-content: start;
+            overflow: hidden
         }
 
         .tile {
             position: relative;
             background: #000;
-            border-radius: var(--radius);
-            overflow: hidden
+            border: 1px solid #161c26;
+            border-radius: 0;
+            aspect-ratio: 16/9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            isolation: isolate
         }
 
         .tile video {
@@ -112,198 +109,53 @@
             height: 100%;
             object-fit: contain;
             background: #000;
-            display: block
+            display: block;
+            border-radius: 0
         }
 
-        /* Controls overlay (right aligned) */
-        .controls {
+        .hover-actions {
             position: absolute;
-            inset: auto 0 0 0;
-            height: var(--toolbar-h);
+            right: 6px;
+            top: 6px;
             display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            gap: 8px;
-            padding: 0 8px;
-            background: linear-gradient(to top, rgba(0, 0, 0, .55), rgba(0, 0, 0, .0));
+            gap: 6px;
+            z-index: 4;
             opacity: 0;
-            pointer-events: none;
-            transition: opacity .15s ease
+            transform: translateY(-4px);
+            transition: opacity 120ms ease, transform 120ms ease
         }
 
-        .tile:hover .controls,
-        .controls.show {
+        .tile:hover .hover-actions {
             opacity: 1;
-            pointer-events: auto
+            transform: translateY(0)
         }
 
-        .icon {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 34px;
-            height: 34px;
-            border-radius: 10px;
+        .icon-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 0;
+            display: grid;
+            place-items: center;
+            background: rgba(0, 0, 0, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             cursor: pointer;
-            user-select: none
-        }
-
-        .icon:hover {
-            background: rgba(255, 255, 255, .1)
-        }
-
-        .icon.danger:hover {
-            background: rgba(255, 84, 112, .15)
-        }
-
-        .material-symbols-outlined {
-            font-variation-settings: "FILL" 0, "wght" 500, "GRAD" 0, "opsz" 28;
+            color: #e7edf5;
+            font-size: 18px;
             line-height: 1
         }
 
-        /* Volume popover */
-        .vol-wrap {
-            position: relative;
-            display: flex;
-            align-items: center
+        .icon-btn:hover {
+            background: rgba(255, 255, 255, 0.12)
         }
 
-        .vol-pop {
-            position: absolute;
-            bottom: 44px;
-            right: 0;
-            display: none;
-            flex-direction: column;
-            gap: 8px;
-            padding: 8px;
-            border-radius: 10px;
-            background: var(--overlay-bg);
-            backdrop-filter: blur(4px)
-        }
-
-        .vol-slider {
-            writing-mode: bt-lr;
-            -webkit-appearance: slider-vertical;
-            width: 8px;
-            height: 120px
-        }
-
-        /* Top-left badge */
-        .badge {
-            position: absolute;
-            top: 8px;
-            left: 8px;
-            background: rgba(0, 0, 0, .6);
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-size: 12px;
-            color: #cfe0f7
-        }
-
-        /* Error layer */
-        .error {
-            position: absolute;
-            inset: 0;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-            background: var(--overlay-bg);
-            color: #fff;
-            text-align: center
-        }
-
-        .error.show {
-            display: flex
-        }
-
-        .error .panel {
-            max-width: 520px;
-            background: #111926;
-            border: 1px solid #2b3e56;
-            border-radius: 12px;
-            padding: 14px
-        }
-
-        .error .row {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            justify-content: center;
-            margin-top: 10px
-        }
-
-        .error .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            border: 1px solid #26364a;
-            background: #13202e;
-            color: #fff;
-            padding: 8px 10px;
-            border-radius: 10px;
-            cursor: pointer
-        }
-
-        /* Menus */
-        .menu {
-            position: absolute;
-            bottom: 48px;
-            right: 8px;
-            background: var(--overlay-bg);
-            backdrop-filter: blur(4px);
-            border-radius: 12px;
-            border: 1px solid #2b3e56;
-            display: none;
-            min-width: 240px;
-            z-index: 3
-        }
-
-        .menu ul {
-            list-style: none;
-            margin: 0;
-            padding: 8px
-        }
-
-        .menu li {
-            padding: 8px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            cursor: pointer;
-            white-space: nowrap
-        }
-
-        .menu li:hover {
-            background: rgba(255, 255, 255, .08)
-        }
-
-        .menu .sep {
-            margin: 6px 0;
-            border-top: 1px dashed #2b3e56
-        }
-
-        .menu .hint {
-            opacity: .8;
-            font-size: 12px;
-            padding: 6px 8px
-        }
-
-        .tile .menu.open {
-            display: block
-        }
-
-        .check {
-            font-size: 18px
-        }
-
-        video::cue {
-            background: rgba(0, 0, 0, .65);
-            color: #fff;
-            border-radius: 6px;
-            padding: .2em .4em
+        .empty {
+            color: var(--muted);
+            text-align: center;
+            padding: 10px;
+            border: 1px dashed #1e2430;
+            background: #0c1118;
+            align-self: center;
+            justify-self: center
         }
 
         video::-webkit-media-controls {
@@ -313,322 +165,256 @@
 </head>
 
 <body>
-    <header>
-        <input id="url" type="url" placeholder="Paste .m3u8 or .mpd URL and press Add" />
-        <button class="btn" id="addBtn"><span class="material-symbols-outlined">add</span> Add</button>
-        <label title="Auto-retry failed streams until they return">
-            <input type="checkbox" id="autoRetry" /> Auto-retry
-        </label>
-    </header>
-
-    <section id="grid" aria-live="polite" aria-label="Streams grid"></section>
+    <div class="wrap">
+        <div class="toolbar" id="toolbar">
+            <input id="urlInput" type="text" placeholder="Paste .m3u8 URL(s), separated by space/comma" />
+            <button id="addBtn" title="Add all URLs">Add</button>
+            <button id="clearBtn" title="Remove all streams">Clear All</button>
+        </div>
+        <div id="grid" class="grid" aria-live="polite"></div>
+    </div>
 
     <script>
-        (function () {
-            const grid = document.getElementById('grid');
-            const addBtn = document.getElementById('addBtn');
-            const urlInput = document.getElementById('url');
-            const autoRetry = document.getElementById('autoRetry');
+        const LS_KEY = 'multiHlsUrls';
+        const players = new Map(); // id -> { hls, video, url, tile, backoffMs, lastTime, healthTimer, needsHeal }
+        const streamUrls = [];     // duplicates allowed
 
-            /* ---------- persistence (localStorage) ---------- */
-            const KEY = 'streams';
-            function saveStreams(urls) { try { localStorage.setItem(KEY, JSON.stringify(urls)); } catch { } }
-            function loadStreams() { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : []; } catch { return []; } }
+        const grid = document.getElementById('grid');
+        const input = document.getElementById('urlInput');
+        const addBtn = document.getElementById('addBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const toolbar = document.getElementById('toolbar');
 
-            /* ---------- responsive layout ---------- */
-            function layout() {
-                const n = grid.children.length; if (!n) { grid.style.gridTemplateColumns = ''; grid.style.gridTemplateRows = ''; return; }
-                const vw = window.innerWidth - 20;
-                const vh = (window.innerHeight - document.querySelector('header').offsetHeight) - 20;
-                let best = { rows: 1, cols: n, area: 0 };
-                for (let rows = 1; rows <= n; rows++) {
-                    const cols = Math.ceil(n / rows);
-                    const w = Math.floor(vw / cols), h = Math.floor(vh / rows);
-                    const area = w * h;
-                    if (area > best.area) { best = { rows, cols, area }; }
+        addBtn.addEventListener('click', () => {
+            const raw = input.value.trim(); if (!raw) return;
+            const urls = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+            addUrls(urls); input.value = '';
+        });
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); } });
+        clearBtn.addEventListener('click', () => { removeAllTiles(); saveList(); layoutGrid(); });
+
+        function addUrls(urls) {
+            let added = 0;
+            urls.forEach(u => { if (!u) return; streamUrls.push(u); addStreamTile(u); added++; });
+            if (added > 0) { saveList(); layoutGrid(); }
+            updateEmptyState();
+        }
+        function saveList() { try { localStorage.setItem(LS_KEY, JSON.stringify(streamUrls)); } catch { } }
+        function loadList() { try { const raw = localStorage.getItem(LS_KEY); if (!raw) return []; const arr = JSON.parse(raw); return Array.isArray(arr) ? arr.filter(Boolean) : []; } catch { return []; } }
+
+        function updateEmptyState() {
+            if ([...grid.children].every(el => !el.classList.contains('tile'))) {
+                const div = document.createElement('div'); div.className = 'empty'; div.textContent = 'No streams yet.'; grid.appendChild(div);
+            } else { const first = grid.querySelector('.empty'); if (first) first.remove(); }
+        }
+
+        function addStreamTile(url) {
+            const placeholder = grid.querySelector('.empty'); if (placeholder) placeholder.remove();
+
+            const tile = document.createElement('div'); tile.className = 'tile'; tile.tabIndex = 0;
+            const video = document.createElement('video');
+            video.setAttribute('playsinline', ''); video.setAttribute('muted', ''); video.muted = true; video.autoplay = true; video.controls = false; video.preload = 'auto';
+
+            const actions = document.createElement('div'); actions.className = 'hover-actions';
+            actions.innerHTML = `
+        <div class="icon-btn" title="Open stream URL in a new tab" data-action="open"><i class="ri-external-link-line"></i></div>
+        <div class="icon-btn" title="Refresh stream" data-action="refresh"><i class="ri-refresh-line"></i></div>
+        <div class="icon-btn" title="Unmute" data-action="mute"><i class="ri-volume-mute-line"></i></div>
+        <div class="icon-btn" title="Remove stream" data-action="close"><i class="ri-close-line"></i></div>
+      `;
+            tile.appendChild(video); tile.appendChild(actions); grid.appendChild(tile);
+
+            tile.addEventListener('dblclick', () => { if (!document.fullscreenElement) tile.requestFullscreen?.(); else document.exitFullscreen?.(); });
+
+            actions.addEventListener('click', (e) => {
+                const btn = e.target.closest('.icon-btn'); if (!btn) return;
+                const action = btn.getAttribute('data-action');
+                if (action === 'open') { window.open(url, '_blank', 'noopener'); }
+                else if (action === 'close') { destroyTile(tile, url); saveList(); layoutGrid(); }
+                else if (action === 'refresh') { const rec = getRecByTile(tile); if (rec) hardRefresh(rec); }
+                else if (action === 'mute') {
+                    video.muted = !video.muted;
+                    if (video.muted) { btn.title = 'Unmute'; btn.firstElementChild.className = 'ri-volume-mute-line'; }
+                    else { btn.title = 'Mute'; btn.firstElementChild.className = 'ri-volume-up-line'; video.play().catch(() => { }); }
                 }
-                grid.style.gridTemplateColumns = 'repeat(' + best.cols + ', 1fr)';
-                grid.style.gridTemplateRows = 'repeat(' + best.rows + ', 1fr)';
-            }
-            window.addEventListener('resize', layout);
+            });
 
-            /* ---------- players ---------- */
-            const tiles = new Map(); // id -> state
-            let idSeq = 0;
+            const id = crypto.randomUUID();
+            const rec = { hls: null, video, url, tile, backoffMs: 0, lastTime: 0, healthTimer: null, needsHeal: false };
+            players.set(id, rec);
 
-            function addStream(url) {
-                url = (url || '').trim();
-                if (!url) return; // guard: no empty tiles
+            setupPlayer(rec);
+            startHealthCheck(rec);
+            layoutGrid();
+        }
 
-                const id = 't' + (++idSeq);
-                const tile = document.createElement('div'); tile.className = 'tile'; tile.dataset.id = id; tile.tabIndex = 0;
+        function setupPlayer(rec) {
+            const { video, url } = rec;
+            if (rec.hls) { try { rec.hls.destroy(); } catch { } rec.hls = null; }
+            video.src = ''; video.load();
 
-                const video = document.createElement('video');
-                video.playsInline = true; video.muted = true; video.autoplay = true; video.controls = false; video.disableRemotePlayback = true;
-                video.setAttribute('webkit-playsinline', '');
+            const ensurePlay = () => { const p = video.play(); if (p && typeof p.then === 'function') { p.catch(() => { const resume = () => { video.play().finally(() => window.removeEventListener('pointerdown', resume)); }; window.addEventListener('pointerdown', resume, { once: true }); }); } };
 
-                const badge = document.createElement('div'); badge.className = 'badge'; badge.textContent = 'Muted';
-
-                // Controls (right aligned)
-                const controls = document.createElement('div'); controls.className = 'controls';
-                const ic = (name, title, extra = '') => {
-                    const b = document.createElement('button'); b.className = 'icon ' + extra; b.title = title; b.innerHTML = '<span class="material-symbols-outlined">' + name + '</span>'; b.type = 'button'; return b;
-                };
-
-                // single mute/unmute
-                const muteBtn = ic('volume_off', 'Mute/Unmute');
-
-                // volume pop
-                const volWrap = document.createElement('div'); volWrap.className = 'vol-wrap';
-                const volBtn = ic('volume_up', 'Volume');
-                const volPop = document.createElement('div'); volPop.className = 'vol-pop';
-                const volSlider = document.createElement('input'); volSlider.type = 'range'; volSlider.min = '0'; volSlider.max = '1'; volSlider.step = '0.01'; volSlider.value = '0.8'; volSlider.className = 'vol-slider';
-                volPop.appendChild(volSlider); volWrap.appendChild(volBtn); volWrap.appendChild(volPop);
-
-                // CC menu button
-                const ccBtn = ic('subtitles', 'Captions & translate');
-
-                // quality menu
-                const cogBtn = ic('settings', 'Quality');
-                const openBtn = ic('open_in_new', 'Open in new tab');
-                const refreshBtn = ic('refresh', 'Reload stream');
-                const closeBtn = ic('close', 'Remove stream', 'danger');
-
-                controls.append(muteBtn, volWrap, ccBtn, cogBtn, openBtn, refreshBtn, closeBtn);
-
-                // overlays / menus
-                const error = document.createElement('div'); error.className = 'error';
-                error.innerHTML = '<div class="panel">'
-                    + '<div id="' + id + '-errmsg">Stream error. The source may be offline.</div>'
-                    + '<div class="row">'
-                    + '  <button class="btn" data-act="retry-now"><span class="material-symbols-outlined">refresh</span> Refresh</button>'
-                    + '  <button class="btn" data-act="toggle-auto"><span class="material-symbols-outlined">autorenew</span> Auto-refresh</button>'
-                    + '</div></div>';
-
-                const qMenu = document.createElement('div'); qMenu.className = 'menu'; qMenu.innerHTML = '<ul id="' + id + '-qlist"><li>Loading levels…</li></ul>';
-                const ccMenu = document.createElement('div'); ccMenu.className = 'menu'; ccMenu.innerHTML = '<ul id="' + id + '-cclist"></ul>';
-
-                tile.append(video, badge, controls, error, qMenu, ccMenu);
-                grid.appendChild(tile);
-
-                const type = url.includes('.mpd') ? 'mpd' : 'hls';
-                const state = {
-                    root: tile, video, url, type, hls: null, dash: null, ccOn: false,
-                    retry: { on: false, timer: null, delay: 2000 }, cloudCC: null, textTrack: null,
-                    ccMenu, qMenu
-                };
-                tiles.set(id, state);
-
-                setupPlayer(id, state);
-
-                tile.addEventListener('dblclick', () => toggleFullscreen(tile));
-
-                function updateMuteIcon() { muteBtn.firstElementChild.textContent = video.muted ? 'volume_off' : 'volume_up'; }
-                muteBtn.addEventListener('click', () => { video.muted = !video.muted; badge.textContent = video.muted ? 'Muted' : 'Audio'; updateMuteIcon(); });
-                updateMuteIcon();
-
-                // volume pop stays while you move to slider
-                let volHoverTimer = null;
-                function showVol() { clearTimeout(volHoverTimer); volPop.style.display = 'flex'; controls.classList.add('show'); }
-                function hideVol() { volHoverTimer = setTimeout(() => { volPop.style.display = 'none'; controls.classList.remove('show'); }, 250); }
-                volWrap.addEventListener('mouseenter', showVol);
-                volWrap.addEventListener('mouseleave', hideVol);
-                volPop.addEventListener('mouseenter', showVol);
-                volPop.addEventListener('mouseleave', hideVol);
-
-                volSlider.addEventListener('input', () => {
-                    video.volume = parseFloat(volSlider.value);
-                    if (video.muted && video.volume > 0) { video.muted = false; updateMuteIcon(); badge.textContent = 'Audio'; }
+            if (window.Hls && Hls.isSupported()) {
+                const hls = new Hls({ maxLiveSyncPlaybackRate: 1.5, enableWorker: true, lowLatencyMode: true, backBufferLength: 30, capLevelToPlayerSize: false });
+                rec.hls = hls;
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(url));
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    if (hls.levels && hls.levels.length > 0) { const top = hls.levels.length - 1; hls.nextLevel = top; hls.currentLevel = top; hls.loadLevel = top; }
+                    resetBackoff(rec); ensurePlay();
                 });
-
-                ccBtn.addEventListener('click', (e) => { e.stopPropagation(); buildCcMenu(state); ccMenu.classList.toggle('open'); qMenu.classList.remove('open'); });
-                cogBtn.addEventListener('click', (e) => { e.stopPropagation(); qMenu.classList.toggle('open'); ccMenu.classList.remove('open'); });
-                document.addEventListener('click', () => { qMenu.classList.remove('open'); ccMenu.classList.remove('open'); });
-
-                openBtn.addEventListener('click', () => window.open(url, '_blank', 'noopener'));
-                refreshBtn.addEventListener('click', () => reload(id));
-                closeBtn.addEventListener('click', () => removeTile(id));
-
-                error.querySelector('[data-act="retry-now"]').addEventListener('click', () => reload(id));
-                const autoBtn = error.querySelector('[data-act="toggle-auto"]');
-                autoBtn.addEventListener('click', () => {
-                    state.retry.on = !state.retry.on;
-                    autoBtn.classList.toggle('active', state.retry.on);
-                    autoBtn.innerHTML = '<span class="material-symbols-outlined">autorenew</span> ' + (state.retry.on ? 'Stop auto-refresh' : 'Auto-refresh');
-                    if (state.retry.on && !state.retry.timer) { scheduleRetry(state); }
-                    if (!state.retry.on && state.retry.timer) { clearTimeout(state.retry.timer); state.retry.timer = null; state.retry.delay = 2000; }
-                });
-
-                layout(); persist();
-            }
-
-            function setupPlayer(id, state) {
-                const { video, url, type } = state;
-                if (state.hls) { state.hls.destroy(); state.hls = null; }
-                if (state.dash) { state.dash.reset(); state.dash = null; }
-                setError(state, false);
-
-                if (type === 'hls') {
-                    if (Hls.isSupported()) {
-                        const hls = new Hls({ enableWorker: true, backBufferLength: 90, startLevel: -1 });
-                        state.hls = hls;
-                        hls.subtitleDisplay = true;
-                        hls.on(Hls.Events.ERROR, (_, data) => handleHlsError(state, data));
-                        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                            buildLevelsMenu(state, hls.levels?.map((l, i) => ({ i, label: levelLabel(l) })) || [], (lvl) => { hls.currentLevel = lvl; });
-                            if (hls.levels && hls.levels.length) { hls.currentLevel = hls.levels.length - 1; }
-                            autoplay(video);
-                        });
-                        hls.attachMedia(video);
-                        hls.loadSource(url);
-                    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                        video.src = url;
-                        video.addEventListener('error', () => setError(state, true, 'Native HLS error'));
-                        video.addEventListener('loadedmetadata', () => {
-                            buildLevelsMenu(state, [{ i: -1, label: 'Auto (native)' }], () => { });
-                            autoplay(video);
-                        });
+                hls.on(Hls.Events.LEVEL_LOADED, () => { if (hls.levels && hls.levels.length > 0) { const top = hls.levels.length - 1; if (hls.currentLevel !== top) hls.currentLevel = top; } });
+                hls.on(Hls.Events.ERROR, (_, data) => {
+                    if (data.fatal) {
+                        // If hidden, queue a soft heal instead of reconnecting now
+                        if (document.hidden) { rec.needsHeal = true; return; }
+                        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { try { hls.recoverMediaError(); } catch { } scheduleReconnect(rec); }
+                        else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { scheduleReconnect(rec); }
+                        else { scheduleReconnect(rec); }
                     } else {
-                        setError(state, true, 'HLS not supported in this browser');
+                        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR || data.details === Hls.ErrorDetails.INTERNAL_EXCEPTION) {
+                            if (document.hidden) { rec.needsHeal = true; return; }
+                            scheduleReconnect(rec);
+                        }
                     }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+                video.addEventListener('loadedmetadata', () => { resetBackoff(rec); ensurePlay(); }, { once: true });
+            } else { showUnsupported(rec.tile); }
+        }
+
+        function hardRefresh(rec) {
+            try {
+                if (rec.hls) {
+                    rec.hls.stopLoad(); rec.hls.detachMedia(); rec.hls.attachMedia(rec.video); rec.hls.loadSource(rec.url);
                 } else {
-                    const player = dashjs.MediaPlayer().create();
-                    state.dash = player;
-                    player.initialize(video, url, true);
-                    player.updateSettings({ streaming: { abr: { autoSwitchBitrate: { video: true } } } });
-                    player.on(dashjs.MediaPlayer.events.ERROR, (e) => setError(state, true, 'DASH error: ' + (e?.event?.message || '')));
-                    player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
-                        const info = player.getBitrateInfoListFor('video') || [];
-                        buildLevelsMenu(state, [{ i: -1, label: 'Auto' }].concat(info.map((b, idx) => ({ i: idx, label: Math.round(b.bitrate / 1000) + ' kbps' }))).reverse(), (lvl) => {
-                            if (lvl === -1) { player.updateSettings({ streaming: { abr: { autoSwitchBitrate: { video: true } } } }); }
-                            else { player.updateSettings({ streaming: { abr: { autoSwitchBitrate: { video: false } } } }); player.setQualityFor('video', lvl, true); }
-                        });
-                        autoplay(video);
-                    });
+                    rec.video.pause();
+                    const u = new URL(rec.url, window.location.href); u.searchParams.set('_ts', Date.now().toString());
+                    rec.video.src = ''; rec.video.load(); rec.video.src = u.toString(); rec.video.play().catch(() => { });
                 }
+            } catch { setupPlayer(rec); }
+        }
 
-                video.addEventListener('play', () => setError(state, false));
-                video.addEventListener('stalled', () => setError(state, true, 'Playback stalled'));
-                document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && video.paused) { video.play().catch(() => { }); } });
-            }
+        function showUnsupported(tile) {
+            const msg = document.createElement('div'); msg.style.position = 'absolute'; msg.style.inset = '0'; msg.style.display = 'grid'; msg.style.placeItems = 'center';
+            msg.style.background = 'linear-gradient(180deg,#0a0f15,#0c121a)'; msg.style.color = '#ffb4b4'; msg.style.fontSize = '14px'; msg.style.padding = '12px';
+            msg.textContent = 'HLS not supported in this browser.'; tile.appendChild(msg);
+        }
 
-            function autoplay(video) { video.play().catch(() => { }); }
-            function levelLabel(l) { const p = []; if (l.height) p.push(l.height + 'p'); if (l.bitrate) p.push(Math.round(l.bitrate / 1000) + ' kbps'); return p.join(' · ') || 'Level'; }
+        function resetBackoff(rec) { rec.backoffMs = 0; }
 
-            function buildLevelsMenu(state, levels, onPick) {
-                const ul = state.qMenu.querySelector('ul');
-                ul.innerHTML = '';
-                const mk = (label, val) => { const li = document.createElement('li'); li.innerHTML = '<span>' + label + '</span>'; li.addEventListener('click', (e) => { e.stopPropagation(); onPick(val); state.qMenu.classList.remove('open'); }); return li; };
-                ul.appendChild(mk('Auto', -1));
-                levels.forEach(l => { if (l.i !== -1) ul.appendChild(mk(l.label, l.i)); });
-            }
+        // Do NOT reconnect while hidden; queue a soft heal instead
+        function scheduleReconnect(rec) {
+            if (document.hidden) { rec.needsHeal = true; return; }
+            rec.backoffMs = rec.backoffMs ? Math.min(rec.backoffMs * 2, 30000) : 1000;
+            clearTimeout(rec._reconnectTimer);
+            rec._reconnectTimer = setTimeout(() => softHeal(rec), rec.backoffMs);
+        }
 
-            function buildCcMenu(state) {
-                const v = state.video;
-                const ul = state.ccMenu.querySelector('ul');
-                ul.innerHTML = '';
-
-                const close = () => state.ccMenu.classList.remove('open');
-
-                const autoItem = document.createElement('li');
-                autoItem.innerHTML = '<span>Auto-translate (detect)</span>';
-                autoItem.addEventListener('click', (e) => { e.stopPropagation(); if (state.cloudCC) { stopCloudCC(state); } else { startCloudCC(state); setEmbeddedTrack(state, -1); } close(); });
-                ul.appendChild(autoItem);
-
-                const sep = document.createElement('div'); sep.className = 'sep'; ul.appendChild(sep);
-
-                const off = document.createElement('li');
-                off.innerHTML = '<span>Off</span>';
-                off.addEventListener('click', (e) => { e.stopPropagation(); stopCloudCC(state); setEmbeddedTrack(state, -1); close(); });
-                ul.appendChild(off);
-
-                const tracks = Array.from(v.textTracks || []).filter(t => t.kind === 'subtitles' || t.kind === 'captions');
-                if (tracks.length) {
-                    const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = 'Embedded captions'; ul.appendChild(hint);
-                    tracks.forEach((t, idx) => {
-                        const li = document.createElement('li');
-                        const label = (t.label || t.language || 'Track ' + (idx + 1));
-                        const active = (t.mode === 'showing');
-                        li.innerHTML = '<span>' + label + '</span>' + (active ? '<span class="check">✓</span>' : '');
-                        li.addEventListener('click', (e) => { e.stopPropagation(); stopCloudCC(state); setEmbeddedTrack(state, idx); close(); });
-                        ul.appendChild(li);
-                    });
-                } else {
-                    const none = document.createElement('div'); none.className = 'hint'; none.textContent = 'No embedded captions detected'; ul.appendChild(none);
+        // Soft heal: try to resume without reloading the source
+        function softHeal(rec) {
+            try {
+                if (rec.hls) {
+                    // Don’t stop/detach; just nudge loader/decoder
+                    rec.hls.startLoad();
+                    try { rec.hls.recoverMediaError(); } catch { }
                 }
+                rec.video.play().catch(() => { });
+                resetBackoff(rec);
+            } catch {
+                // As a last resort, rebuild
+                setupPlayer(rec);
             }
+        }
 
-            function setEmbeddedTrack(state, index) {
-                const tracks = state.video.textTracks || [];
-                for (let i = 0; i < tracks.length; i++) { tracks[i].mode = (i === index && index >= 0) ? 'showing' : 'hidden'; }
-                state.ccOn = index >= 0;
-            }
+        function startHealthCheck(rec) {
+            rec.lastTime = 0;
+            rec.healthTimer = setInterval(() => {
+                if (document.hidden) return; // skip checks while hidden
+                const v = rec.video; if (!v || v.readyState === 0) return;
+                const now = v.currentTime;
+                if (!v.paused && Math.abs(now - rec.lastTime) < 0.1) { scheduleReconnect(rec); }
+                rec.lastTime = now;
+            }, 10000);
+        }
+        function stopHealthCheck(rec) { if (rec.healthTimer) clearInterval(rec.healthTimer); rec.healthTimer = null; }
 
-            // Cloud CC plumbing (needs backend at ws:///cloud-cc)
-            function startCloudCC(state) {
-                if (state.cloudCC) return;
-                const v = state.video; if (!v.captureStream) { alert('Your browser does not support captureStream on video.'); return; }
-                const ms = v.captureStream(); const audioTrack = ms.getAudioTracks()[0]; if (!audioTrack) { alert('No audio track available to transcribe.'); return; }
-                const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(new MediaStream([audioTrack])); const proc = ctx.createScriptProcessor(4096, 1, 1);
-                src.connect(proc); proc.connect(ctx.destination);
-                if (!state.textTrack) { state.textTrack = v.addTextTrack('subtitles', 'Cloud CC', 'en'); }
-                state.textTrack.mode = 'showing';
-                const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/cloud-cc';
-                const ws = new WebSocket(wsUrl); ws.binaryType = 'arraybuffer';
-                const cc = { stop() { try { ws.close(); } catch { } try { proc.disconnect(); } catch { } try { src.disconnect(); } catch { } try { ctx.close(); } catch { } } };
-                state.cloudCC = cc;
-                ws.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.type === 'cc' && m.text) { const now = v.currentTime; state.textTrack.addCue(new VTTCue(now, now + 4, m.text)); } } catch { } };
-                proc.onaudioprocess = (e) => { const buf = e.inputBuffer.getChannelData(0); const rate = ctx.sampleRate / 16000; const outLen = Math.floor(buf.length / rate); const out = new Int16Array(outLen); for (let i = 0; i < outLen; i++) { const x = buf[Math.floor(i * rate)] || 0; out[i] = Math.max(-1, Math.min(1, x)) * 0x7fff; } if (ws.readyState === 1) ws.send(out.buffer); };
-            }
-            function stopCloudCC(state) { if (!state.cloudCC) return; try { state.cloudCC.stop(); } catch { } state.cloudCC = null; }
-
-            function handleHlsError(state, data) {
-                const fatal = data?.fatal; const details = data?.details; let msg = 'HLS error: ' + (details || 'Unknown');
-                if (fatal) {
-                    switch (data.type) {
-                        case Hls.ErrorTypes.NETWORK_ERROR: msg += ' (network)'; state.hls?.startLoad(); break;
-                        case Hls.ErrorTypes.MEDIA_ERROR: msg += ' (media)'; state.hls?.recoverMediaError(); break;
-                        default: setError(state, true, msg); break;
+        // On visibility return, apply queued soft heals; do not reload sources
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                for (const [, rec] of players.entries()) {
+                    if (rec.needsHeal) {
+                        rec.needsHeal = false;
+                        softHeal(rec);
+                    } else {
+                        // Even if not queued, some browsers auto-pause; just try to resume
+                        rec.video.play().catch(() => { });
                     }
-                } else { setError(state, true, msg); }
-            }
-
-            function setError(state, show, message) {
-                const el = state.root.querySelector('.error');
-                if (show) {
-                    if (message) state.root.querySelector('#' + state.root.dataset.id + '-errmsg')?.replaceChildren(document.createTextNode(message));
-                    el.classList.add('show');
-                    if (autoRetry.checked && !state.retry.on) { state.retry.on = true; scheduleRetry(state); }
-                } else {
-                    el.classList.remove('show');
-                    if (!state.retry.on && state.retry.timer) { clearTimeout(state.retry.timer); state.retry.timer = null; state.retry.delay = 2000; }
                 }
             }
-            function scheduleRetry(state) {
-                if (state.retry.timer) clearTimeout(state.retry.timer);
-                state.retry.timer = setTimeout(() => { reload(state.root.dataset.id); state.retry.delay = Math.min(state.retry.delay * 1.6, 30000); if (state.retry.on) scheduleRetry(state); }, state.retry.delay);
+        });
+
+        // Only heal on actual network change (softly)
+        window.addEventListener('online', () => {
+            for (const [, rec] of players.entries()) {
+                setTimeout(() => { softHeal(rec); }, Math.floor(Math.random() * 500));
             }
+        });
 
-            function reload(id) { const s = tiles.get(id); if (!s) return; setupPlayer(id, s); }
-            function removeTile(id) { const s = tiles.get(id); if (!s) return; if (s.hls) s.hls.destroy(); if (s.dash) s.dash.reset(); s.root.remove(); tiles.delete(id); layout(); persist(); }
-            function toggleFullscreen(el) { if (document.fullscreenElement) { document.exitFullscreen().catch(() => { }); } else { el.requestFullscreen?.().catch(() => { }); } }
-
-            /* ---------- persist/restore ---------- */
-            function persist() { saveStreams(Array.from(tiles.values()).map(s => s.url)); }
-            function restore() { const arr = loadStreams(); if (Array.isArray(arr) && arr.length) { arr.forEach(addStream); } }
-
-            /* ---------- add URL ---------- */
-            function addFromInput() {
-                const u = (urlInput.value || '').trim();
-                if (!u) return;
-                addStream(u);
-                urlInput.value = ''; urlInput.focus();
+        function destroyTile(el, url) {
+            for (const [key, rec] of players.entries()) {
+                if (rec.tile === el) {
+                    try { stopHealthCheck(rec); clearTimeout(rec._reconnectTimer); if (rec.hls) rec.hls.destroy(); rec.video.pause(); rec.video.src = ''; rec.video.load(); } catch { }
+                    players.delete(key); break;
+                }
             }
-            urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') { addFromInput(); } });
-            addBtn.addEventListener('click', addFromInput);
+            const idx = streamUrls.indexOf(url); if (idx !== -1) streamUrls.splice(idx, 1);
+            el.remove(); updateEmptyState();
+        }
 
-            /* ---------- start ---------- */
-            restore();
+        function removeAllTiles() {
+            for (const [, rec] of players.entries()) {
+                try { stopHealthCheck(rec); clearTimeout(rec._reconnectTimer); if (rec.hls) rec.hls.destroy(); rec.video.pause(); rec.video.src = ''; rec.video.load(); rec.tile.remove(); } catch { }
+            }
+            players.clear(); streamUrls.splice(0, streamUrls.length); updateEmptyState();
+        }
+
+        // Fit-all layout
+        function layoutGrid() {
+            const tiles = [...grid.children].filter(el => el.classList.contains('tile'));
+            const n = tiles.length;
+            if (n === 0) { grid.style.gridTemplateColumns = '1fr'; grid.style.gridAutoRows = '1fr'; return; }
+            const gap = parseFloat(getComputedStyle(grid).getPropertyValue('--gap')) || 10;
+            const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+            const toolbarRect = toolbar.getBoundingClientRect();
+            const availableW = vw - 2 * 6; const availableH = vh - toolbarRect.height - 2 * 6;
+            const aspectW = 16, aspectH = 9; let bestCols = 1, bestScale = 0;
+            for (let cols = 1; cols <= n; cols++) {
+                const rows = Math.ceil(n / cols);
+                const totalGapW = gap * (cols - 1), totalGapH = gap * (rows - 1);
+                const cellW = (availableW - totalGapW) / cols, cellH = (availableH - totalGapH) / rows;
+                if (cellW <= 0 || cellH <= 0) continue;
+                const scale = Math.min(cellW / aspectW, cellH / aspectH);
+                if (scale > bestScale) { bestScale = scale; bestCols = cols; }
+            }
+            const tileW = Math.floor(aspectW * bestScale), tileH = Math.floor(aspectH * bestScale);
+            grid.style.gridTemplateColumns = `repeat(${bestCols}, ${tileW}px)`;
+            grid.style.gridAutoRows = `${tileH}px`;
+        }
+
+        const ro = new ResizeObserver(() => layoutGrid());
+        ro.observe(document.documentElement); ro.observe(grid); ro.observe(toolbar);
+        window.addEventListener('orientationchange', () => setTimeout(layoutGrid, 50));
+        window.addEventListener('resize', () => layoutGrid());
+
+        function getRecByTile(tile) { for (const [, rec] of players.entries()) if (rec.tile === tile) return rec; return null; }
+
+        (function init() {
+            const saved = loadList();
+            if (saved.length) { saved.forEach(u => { streamUrls.push(u); addStreamTile(u); }); }
+            else { updateEmptyState(); layoutGrid(); }
         })();
     </script>
 </body>
