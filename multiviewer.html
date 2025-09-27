@@ -244,7 +244,7 @@
             cursor: pointer
         }
 
-        /* Cog menu */
+        /* Menus */
         .menu {
             position: absolute;
             bottom: 48px;
@@ -254,7 +254,8 @@
             border-radius: 12px;
             border: 1px solid #2b3e56;
             display: none;
-            min-width: 220px
+            min-width: 240px;
+            z-index: 2
         }
 
         .menu ul {
@@ -270,15 +271,31 @@
             align-items: center;
             justify-content: space-between;
             gap: 8px;
-            cursor: pointer
+            cursor: pointer;
+            white-space: nowrap
         }
 
         .menu li:hover {
             background: rgba(255, 255, 255, .08)
         }
 
+        .menu .sep {
+            margin: 6px 0;
+            border-top: 1px dashed #2b3e56
+        }
+
+        .menu .hint {
+            opacity: .8;
+            font-size: 12px;
+            padding: 6px 8px
+        }
+
         .tile .menu.open {
             display: block
+        }
+
+        .check {
+            font-size: 18px
         }
 
         /* Subtitle styling (built-in and Cloud CC) */
@@ -383,21 +400,27 @@
                 const ic = (name, title, extra = '') => {
                     const b = document.createElement('button'); b.className = 'icon ' + extra; b.title = title; b.innerHTML = '<span class="material-symbols-outlined">' + name + '</span>'; b.type = 'button'; return b;
                 };
+
+                // Single mute/unmute button (merged)
                 const muteBtn = ic('volume_off', 'Mute/Unmute');
+
+                // Volume popover
                 const volWrap = document.createElement('div'); volWrap.className = 'vol-wrap';
                 const volBtn = ic('volume_up', 'Volume');
                 const volPop = document.createElement('div'); volPop.className = 'vol-pop';
                 const volSlider = document.createElement('input'); volSlider.type = 'range'; volSlider.min = '0'; volSlider.max = '1'; volSlider.step = '0.01'; volSlider.value = '0.8'; volSlider.className = 'vol-slider';
                 volPop.appendChild(volSlider); volWrap.appendChild(volBtn); volWrap.appendChild(volPop);
 
-                const ccBtn = ic('subtitles', 'Toggle captions');
-                const cloudCCBtn = ic('translate', 'Cloud CC: transcribe + translate to English');
+                // CC button now opens a CC menu (auto-translate + embedded languages + off)
+                const ccBtn = ic('subtitles', 'Captions & translate');
+
+                // Cog menu (quality)
                 const cogBtn = ic('settings', 'Quality & settings');
                 const openBtn = ic('open_in_new', 'Open in new tab');
                 const refreshBtn = ic('refresh', 'Reload stream');
                 const closeBtn = ic('close', 'Remove stream', 'danger');
 
-                controls.append(muteBtn, volWrap, ccBtn, cloudCCBtn, cogBtn, openBtn, refreshBtn, closeBtn);
+                controls.append(muteBtn, volWrap, ccBtn, cogBtn, openBtn, refreshBtn, closeBtn);
 
                 // Error overlay
                 const error = document.createElement('div'); error.className = 'error';
@@ -409,15 +432,19 @@
                     + '</div></div>';
 
                 // Quality menu
-                const menu = document.createElement('div'); menu.className = 'menu'; menu.innerHTML = '<ul id="' + id + '-qlist"><li>Loading levels…</li></ul>';
+                const qMenu = document.createElement('div'); qMenu.className = 'menu'; qMenu.innerHTML = '<ul id="' + id + '-qlist"><li>Loading levels…</li></ul>';
 
-                tile.append(video, badge, controls, error, menu);
+                // CC menu
+                const ccMenu = document.createElement('div'); ccMenu.className = 'menu'; ccMenu.innerHTML = '<ul id="' + id + '-cclist"></ul>';
+
+                tile.append(video, badge, controls, error, qMenu, ccMenu);
                 grid.appendChild(tile);
 
                 const type = url.includes('.mpd') ? 'mpd' : 'hls';
                 const state = {
                     root: tile, video, url, type, hls: null, dash: null, ccOn: false,
-                    retry: { on: false, timer: null, delay: 2000 }, cloudCC: null, textTrack: null
+                    retry: { on: false, timer: null, delay: 2000 }, cloudCC: null, textTrack: null,
+                    ccMenu, qMenu
                 };
                 tiles.set(id, state);
 
@@ -426,11 +453,14 @@
 
                 tile.addEventListener('dblclick', () => toggleFullscreen(tile));
 
+                // Mute/unmute (single button)
+                function updateMuteIcon() { muteBtn.firstElementChild.textContent = video.muted ? 'volume_off' : 'volume_up'; }
                 muteBtn.addEventListener('click', () => {
                     video.muted = !video.muted;
                     badge.textContent = video.muted ? 'Muted' : 'Audio';
-                    muteBtn.firstElementChild.textContent = video.muted ? 'volume_off' : 'volume_up';
+                    updateMuteIcon();
                 });
+                updateMuteIcon();
 
                 // Volume: keep popover visible while moving to slider
                 let volHoverTimer = null;
@@ -444,17 +474,21 @@
                 volSlider.addEventListener('input', () => {
                     video.volume = parseFloat(volSlider.value);
                     if (video.muted && video.volume > 0) {
-                        video.muted = false;
-                        muteBtn.firstElementChild.textContent = 'volume_up';
-                        badge.textContent = 'Audio';
+                        video.muted = false; updateMuteIcon(); badge.textContent = 'Audio';
                     }
                 });
 
-                ccBtn.addEventListener('click', () => toggleBuiltInCC(state));
-                cloudCCBtn.addEventListener('click', () => toggleCloudCC(state));
+                // CC button -> open menu (rebuilt each time to reflect available tracks)
+                ccBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    buildCcMenu(state);
+                    ccMenu.classList.toggle('open');
+                    qMenu.classList.remove('open');
+                });
 
-                cogBtn.addEventListener('click', (e) => { e.stopPropagation(); menu.classList.toggle('open'); });
-                document.addEventListener('click', () => menu.classList.remove('open'));
+                // Cog menu toggle
+                cogBtn.addEventListener('click', (e) => { e.stopPropagation(); qMenu.classList.toggle('open'); ccMenu.classList.remove('open'); });
+                document.addEventListener('click', () => { qMenu.classList.remove('open'); ccMenu.classList.remove('open'); });
 
                 openBtn.addEventListener('click', () => window.open(url, '_blank', 'noopener'));
                 refreshBtn.addEventListener('click', () => reload(id));
@@ -485,6 +519,9 @@
                     if (Hls.isSupported()) {
                         const hls = new Hls({ enableWorker: true, backBufferLength: 90, startLevel: -1 });
                         state.hls = hls;
+                        // ensure subtitles are surfaced
+                        hls.subtitleDisplay = true;
+
                         hls.on(Hls.Events.ERROR, (evt, data) => handleHlsError(state, data));
                         hls.on(Hls.Events.MANIFEST_PARSED, () => {
                             buildLevelsMenu(state, hls.levels?.map((l, i) => ({ i, label: levelLabel(l) })) || [], (lvl) => { hls.currentLevel = lvl; });
@@ -522,7 +559,6 @@
                 video.addEventListener('play', () => setError(state, false));
                 video.addEventListener('stalled', () => setError(state, true, 'Playback stalled'));
 
-                // Try to resume when tab refocuses (browsers may throttle hidden tabs)
                 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && video.paused) { video.play().catch(() => { }); } });
             }
 
@@ -533,15 +569,140 @@
             }
 
             function buildLevelsMenu(state, levels, onPick) {
-                const ul = state.root.querySelector('.menu ul');
+                const ul = state.qMenu.querySelector('ul');
                 ul.innerHTML = '';
-                const mk = (label, val) => {
-                    const li = document.createElement('li'); li.textContent = label; li.dataset.val = val;
-                    li.addEventListener('click', (e) => { e.stopPropagation(); onPick(val); state.root.querySelector('.menu').classList.remove('open'); });
+                const mk = (label, val, checked = false) => {
+                    const li = document.createElement('li');
+                    li.innerHTML = '<span>' + label + '</span>' + (checked ? '<span class="check">✓</span>' : '');
+                    li.dataset.val = val;
+                    li.addEventListener('click', (e) => { e.stopPropagation(); onPick(val); state.qMenu.classList.remove('open'); });
                     return li;
                 };
                 ul.appendChild(mk('Auto', -1));
                 levels.forEach(l => { if (l.i !== -1) ul.appendChild(mk(l.label, l.i)); });
+            }
+
+            // CC menu: Auto-translate (detect) / Off / Embedded languages
+            function buildCcMenu(state) {
+                const v = state.video;
+                const ul = state.ccMenu.querySelector('ul');
+                ul.innerHTML = '';
+
+                // Helper to close menu
+                const close = () => state.ccMenu.classList.remove('open');
+
+                // Auto-translate (Cloud CC) at top
+                const autoItem = document.createElement('li');
+                autoItem.innerHTML = '<span>Auto-translate (detect)</span>';
+                autoItem.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    // start Cloud CC (or stop if already on)
+                    if (state.cloudCC) { stopCloudCC(state); } else { startCloudCC(state); }
+                    // also turn off embedded tracks when enabling cloud CC
+                    if (state.cloudCC) { setEmbeddedTrack(state, -1); }
+                    close();
+                });
+                ul.appendChild(autoItem);
+
+                // Separator
+                const sep = document.createElement('div'); sep.className = 'sep';
+                ul.appendChild(sep);
+
+                // Off
+                const off = document.createElement('li');
+                off.innerHTML = '<span>Off</span>';
+                off.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    stopCloudCC(state);
+                    setEmbeddedTrack(state, -1);
+                    close();
+                });
+                ul.appendChild(off);
+
+                // Embedded captions section (languages)
+                const tracks = Array.from(v.textTracks || []).filter(t => t.kind === 'subtitles' || t.kind === 'captions');
+                if (tracks.length) {
+                    const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = 'Embedded captions';
+                    ul.appendChild(hint);
+
+                    tracks.forEach((t, idx) => {
+                        const li = document.createElement('li');
+                        const label = (t.label || t.language || 'Track ' + (idx + 1));
+                        const active = (t.mode === 'showing');
+                        li.innerHTML = '<span>' + label + '</span>' + (active ? '<span class="check">✓</span>' : '');
+                        li.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            stopCloudCC(state);
+                            setEmbeddedTrack(state, idx);
+                            close();
+                        });
+                        ul.appendChild(li);
+                    });
+                } else {
+                    const none = document.createElement('div'); none.className = 'hint'; none.textContent = 'No embedded captions detected';
+                    ul.appendChild(none);
+                }
+            }
+
+            function setEmbeddedTrack(state, index) {
+                const v = state.video;
+                const tracks = v.textTracks || [];
+                for (let i = 0; i < tracks.length; i++) {
+                    const show = (i === index && index >= 0);
+                    tracks[i].mode = show ? 'showing' : 'hidden';
+                }
+                state.ccOn = index >= 0;
+            }
+
+            function startCloudCC(state) {
+                if (state.cloudCC) return;
+                const v = state.video;
+                if (!v.captureStream) { alert('Your browser does not support captureStream on video.'); return; }
+                const ms = v.captureStream(); const audioTrack = ms.getAudioTracks()[0]; if (!audioTrack) { alert('No audio track available to transcribe.'); return; }
+                const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
+                const proc = ctx.createScriptProcessor(4096, 1, 1);
+                src.connect(proc); proc.connect(ctx.destination);
+
+                if (!state.textTrack) { state.textTrack = state.video.addTextTrack('subtitles', 'Cloud CC', 'en'); }
+                state.textTrack.mode = 'showing';
+
+                const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/cloud-cc';
+                const ws = new WebSocket(wsUrl); ws.binaryType = 'arraybuffer';
+
+                const cc = {
+                    stop() {
+                        try { ws.close(); } catch (e) { }
+                        try { proc.disconnect(); } catch (e) { }
+                        try { src.disconnect(); } catch (e) { }
+                        try { ctx.close(); } catch (e) { }
+                    }
+                };
+                state.cloudCC = cc;
+
+                ws.onmessage = (ev) => {
+                    try {
+                        const msg = JSON.parse(ev.data);
+                        if (msg.type === 'cc' && msg.text) {
+                            const now = state.video.currentTime;
+                            const cue = new VTTCue(now, now + 4, msg.text);
+                            state.textTrack.addCue(cue);
+                        }
+                    } catch (e) { }
+                };
+
+                proc.onaudioprocess = (e) => {
+                    const buf = e.inputBuffer.getChannelData(0);
+                    const rate = ctx.sampleRate / 16000; const outLen = Math.floor(buf.length / rate);
+                    const out = new Int16Array(outLen);
+                    for (let i = 0; i < outLen; i++) { const x = buf[Math.floor(i * rate)] || 0; out[i] = Math.max(-1, Math.min(1, x)) * 0x7fff; }
+                    if (ws.readyState === 1) ws.send(out.buffer);
+                };
+            }
+
+            function stopCloudCC(state) {
+                if (!state.cloudCC) return;
+                try { state.cloudCC.stop(); } catch (e) { }
+                state.cloudCC = null;
             }
 
             function handleHlsError(state, data) {
@@ -585,59 +746,6 @@
                 if (s.hls) s.hls.destroy();
                 if (s.dash) s.dash.reset();
                 s.root.remove(); tiles.delete(id); layout(); persist();
-            }
-
-            // Built-in caption toggle
-            function toggleBuiltInCC(state) {
-                const v = state.video; const tracks = v.textTracks;
-                if (!tracks || tracks.length === 0) { alert('No embedded captions tracks detected.'); return; }
-                state.ccOn = !state.ccOn;
-                for (let i = 0; i < tracks.length; i++) { tracks[i].mode = state.ccOn ? 'showing' : 'hidden'; }
-            }
-
-            // Cloud CC (speech->English) placeholder: needs backend at ws:///cloud-cc
-            function toggleCloudCC(state) {
-                if (state.cloudCC) { state.cloudCC.stop(); state.cloudCC = null; return; }
-                const v = state.video; if (!v.captureStream) { alert('Your browser does not support captureStream on video.'); return; }
-                const ms = v.captureStream(); const audioTrack = ms.getAudioTracks()[0]; if (!audioTrack) { alert('No audio track available to transcribe.'); return; }
-                const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
-                const proc = ctx.createScriptProcessor(4096, 1, 1);
-                src.connect(proc); proc.connect(ctx.destination);
-
-                if (!state.textTrack) { state.textTrack = state.video.addTextTrack('subtitles', 'Cloud CC', 'en'); state.textTrack.mode = 'showing'; }
-
-                const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/cloud-cc';
-                const ws = new WebSocket(wsUrl); ws.binaryType = 'arraybuffer';
-
-                const cc = {
-                    stop() {
-                        try { ws.close(); } catch (e) { }
-                        try { proc.disconnect(); } catch (e) { }
-                        try { src.disconnect(); } catch (e) { }
-                        try { ctx.close(); } catch (e) { }
-                    }
-                };
-                state.cloudCC = cc;
-
-                ws.onmessage = (ev) => {
-                    try {
-                        const msg = JSON.parse(ev.data);
-                        if (msg.type === 'cc' && msg.text) {
-                            const now = state.video.currentTime;
-                            const cue = new VTTCue(now, now + 4, msg.text);
-                            state.textTrack.addCue(cue);
-                        }
-                    } catch (e) { }
-                };
-
-                proc.onaudioprocess = (e) => {
-                    const buf = e.inputBuffer.getChannelData(0);
-                    // naive downsample to 16kHz, 16-bit PCM
-                    const rate = ctx.sampleRate / 16000; const outLen = Math.floor(buf.length / rate);
-                    const out = new Int16Array(outLen);
-                    for (let i = 0; i < outLen; i++) { const x = buf[Math.floor(i * rate)] || 0; out[i] = Math.max(-1, Math.min(1, x)) * 0x7fff; }
-                    if (ws.readyState === 1) ws.send(out.buffer);
-                };
             }
 
             function toggleFullscreen(el) {
