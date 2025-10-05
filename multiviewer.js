@@ -800,7 +800,8 @@ function addStreamTile(url, passedInstanceId, labelText) {
 			let videoCodec = "unknown",
 				audioCodec = "unknown",
 				audioLang = "unknown",
-				audioBitrate = "N/A";
+				audioBitrate = "N/A",
+				audioChannels = "unknown";
 			try {
 				if (rec.hls && rec.hls.levels && rec.hls.levels.length) {
 					const cur =
