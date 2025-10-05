@@ -2935,8 +2935,15 @@ function layoutGrid() {
 					heightHeroes + (m > 0 && f > 0 ? gap : 0) + heightSmall;
 				const overflow = totalHeight - availableH;
 				// Prefer fits (no overflow) with larger rowH; otherwise minimal overflow, then larger rowH
+				const heroSizeBonus =
+					m > 0 && totalCols > 1 && heroSpan > 1
+						? heroSpan * heroRowSpan * 1e6
+						: 0;
 				const score =
-					(overflow <= 0 ? 1 : 0) * 1e9 - Math.max(0, overflow) * 1e6 + rowH;
+					(overflow <= 0 ? 1 : 0) * 1e9 -
+					Math.max(0, overflow) * 1e6 +
+					rowH +
+					heroSizeBonus;
 				if (!best || score > best.score) {
 					best = {
 						totalCols,
@@ -2955,11 +2962,10 @@ function layoutGrid() {
 		}
 		if (!best) return; // should not happen
 
-		const { totalCols, colW, rowH, heroCols, heroSpan } = best;
+		const { totalCols, colW, rowH, heroCols, heroSpan, heroRows } = best;
 		let { heroRowSpan } = best;
 		if (best.overflow > 0 && heroRowSpan > 1) {
 			// Try to shrink heroes vertically to eliminate overflow
-			const heroRows = Math.ceil(f / heroCols);
 			const smallRows = m > 0 ? Math.ceil(m / totalCols) : 0;
 			const usedSmall =
 				smallRows * rowH + (smallRows > 0 ? (smallRows - 1) * gap : 0);
@@ -2979,18 +2985,35 @@ function layoutGrid() {
 		grid.style.gridAutoFlow = "row"; // keep others below heroes
 
 		// Apply spans per tile
+		const heroTotalRows = heroRows * heroRowSpan;
 		let heroPlaced = 0;
 		tiles.forEach((t) => {
 			if (t.classList.contains("focused")) {
 				// span heroSpan columns and heroRowSpan rows
 				t.style.gridColumn = `span ${heroSpan}`;
 				t.style.gridRow = `span ${heroRowSpan}`;
+				t.style.gridColumnStart = "";
+				t.style.gridRowStart = "";
 				heroPlaced++;
 			} else {
 				t.style.gridColumn = "span 1";
 				t.style.gridRow = "span 1";
+				t.style.gridColumnStart = "";
+				t.style.gridRowStart = "";
 			}
 		});
+		if (m > 0) {
+			let idx = 0;
+			others.forEach((t) => {
+				const colStart = (idx % totalCols) + 1;
+				const rowStart = heroTotalRows + Math.floor(idx / totalCols) + 1;
+				t.style.gridColumn = `${colStart} / span 1`;
+				t.style.gridRow = `${rowStart} / span 1`;
+				t.style.gridColumnStart = `${colStart}`;
+				t.style.gridRowStart = `${rowStart}`;
+				idx++;
+			});
+		}
 		return;
 	}
 	let bestCols = 1,
@@ -3033,9 +3056,13 @@ function layoutGrid() {
 		if (t.classList.contains("focused")) {
 			t.style.gridColumn = `span ${focusedSpanW}`;
 			t.style.gridRow = `span ${focusedSpanH}`;
+			t.style.gridColumnStart = "";
+			t.style.gridRowStart = "";
 		} else {
 			t.style.gridColumn = "span 1";
 			t.style.gridRow = "span 1";
+			t.style.gridColumnStart = "";
+			t.style.gridRowStart = "";
 		}
 	});
 }
