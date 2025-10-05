@@ -140,7 +140,6 @@ function reorderTiles(fromId, toId, placeBefore = true) {
 	} else {
 		insertIndex = streamEntries.length;
 	}
-	if (fromIdx < insertIndex) insertIndex -= 1;
 	if (insertIndex < 0) insertIndex = 0;
 	if (insertIndex > streamEntries.length) insertIndex = streamEntries.length;
 	streamEntries.splice(insertIndex, 0, moved);
