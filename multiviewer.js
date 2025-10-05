@@ -393,6 +393,59 @@ function addStreamTile(url, passedInstanceId, labelText) {
 	const tile = document.createElement("div");
 	tile.className = "tile";
 	tile.tabIndex = 0;
+	const isCustomMode = feedSelector && feedSelector.value === "custom";
+	tile.setAttribute("draggable", isCustomMode ? "true" : "false");
+	tile.dataset.instanceId = passedInstanceId || "";
+
+	// Drag-and-drop reordering logic (Custom mode only)
+	if (isCustomMode) {
+		tile.addEventListener("dragstart", (e) => {
+			tile.classList.add("dragging");
+			if (e.dataTransfer) {
+				e.dataTransfer.effectAllowed = "move";
+				e.dataTransfer.setData("text/plain", tile.dataset.instanceId);
+			}
+		});
+		tile.addEventListener("dragend", () => {
+			tile.classList.remove("dragging");
+			grid
+				.querySelectorAll(".tile.drop-target")
+				.forEach((t) => t.classList.remove("drop-target"));
+		});
+		tile.addEventListener("dragover", (e) => {
+			e.preventDefault();
+			if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+			tile.classList.add("drop-target");
+		});
+		tile.addEventListener("dragleave", () => {
+			tile.classList.remove("drop-target");
+		});
+		tile.addEventListener("drop", (e) => {
+			e.preventDefault();
+			tile.classList.remove("drop-target");
+			const fromId = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
+			const toId = tile.dataset.instanceId;
+			if (!fromId || !toId || fromId === toId) return;
+			reorderTiles(fromId, toId);
+		});
+	}
+	// Reorder streamEntries and re-render grid
+	function reorderTiles(fromId, toId) {
+		// Only reorder in Custom mode
+		if (!(feedSelector && feedSelector.value === "custom")) return;
+		const fromIdx = streamEntries.findIndex((e) => e.instanceId === fromId);
+		const toIdx = streamEntries.findIndex((e) => e.instanceId === toId);
+		if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+		const moved = streamEntries.splice(fromIdx, 1)[0];
+		streamEntries.splice(toIdx, 0, moved);
+		saveList();
+		// Remove all tiles and re-add in new order
+		removeAllTiles(false);
+		streamEntries.forEach((entry) =>
+			addStreamTile(entry.url, entry.instanceId, entry.labelText)
+		);
+		layoutGrid();
+	}
 	const video = document.createElement("video");
 	video.setAttribute("playsinline", "");
 	video.setAttribute("muted", "");
