@@ -2908,9 +2908,14 @@ function layoutGrid() {
 		const heroH = Math.floor((availableW * aspectH) / aspectW);
 
 		if (m === 0) {
-			// Only focused tiles: stack full-width heroes
+			// Only focused tiles: stack full-width heroes and scale to fit vertically
+			const maxHeroH = Math.max(
+				1,
+				Math.floor((availableH - (f - 1) * gap) / Math.max(1, f))
+			);
+			const heroHFit = Math.max(1, Math.min(heroH, maxHeroH));
 			grid.style.gridTemplateColumns = `repeat(1, ${availableW}px)`;
-			grid.style.gridAutoRows = `${Math.max(1, heroH)}px`;
+			grid.style.gridAutoRows = `${heroHFit}px`;
 			grid.style.gridAutoFlow = "row"; // prevent back-fill above heroes
 			tiles.forEach((t) => {
 				if (t.classList.contains("focused")) {
@@ -2964,8 +2969,13 @@ function layoutGrid() {
 		grid.style.gridAutoRows = `${tileHSmall}px`;
 		grid.style.gridAutoFlow = "row"; // ensure others are strictly below heroes
 
-		// Focused rows span enough small rows to reach full-width 16:9 height
-		const focusedRowSpan = Math.max(1, Math.round(heroH / tileHSmall));
+		// Compute total height used by the small grid to determine remaining height for heroes
+		const rowsSmall = Math.ceil(m / Math.max(1, bestColsSmall));
+		const totalSmallH = rowsSmall > 0 ? rowsSmall * tileHSmall + (rowsSmall - 1) * gap : 0;
+		const availableForHeroes = Math.max(0, availableH - totalSmallH - (f - 1) * gap - gap);
+		const heroHFit = Math.max(1, Math.floor(Math.min(heroH, availableForHeroes / Math.max(1, f))));
+		// Focused rows span enough small rows to reach the fitted hero height
+		const focusedRowSpan = Math.max(1, Math.round(heroHFit / tileHSmall));
 		tiles.forEach((t) => {
 			if (t.classList.contains("focused")) {
 				t.style.gridColumn = `1 / -1`;
