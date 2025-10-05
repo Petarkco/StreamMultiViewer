@@ -1,6 +1,8 @@
 const LS_KEY = "multiHlsUrls";
 const players = new Map(); // id -> { hls, video, url, tile, backoffMs, lastTime, healthTimer, needsHeal }
 const streamEntries = []; // duplicates allowed; each entry: { url, instanceId }
+// Track tiles marked as "focused" (enlarged in layout). Not persisted on purpose.
+const focusedIds = new Set();
 
 const grid = document.getElementById("grid");
 const input = document.getElementById("urlInput");
@@ -490,6 +492,7 @@ function addStreamTile(url, passedInstanceId, labelText) {
 	// place debug icon first (left of other hover actions)
 	actions.innerHTML = `
 				<div class="icon-btn" title="Toggle debug info" data-action="debug" aria-pressed="false"><i class="ri-bug-line"></i></div>
+				<div class="icon-btn" title="Focus (enlarge this tile)" data-action="focus" aria-pressed="false"><i class="ri-focus-2-line"></i></div>
 				<div class="icon-btn" title="Open stream URL in a new tab" data-action="open"><i class="ri-external-link-line"></i></div>
 				<div class="icon-btn" title="Remove stream" data-action="close"><i class="ri-close-line"></i></div>
 			`;
@@ -582,6 +585,27 @@ function addStreamTile(url, passedInstanceId, labelText) {
 		if (action === "debug") {
 			try {
 				toggleDebugForTile(tile, btn);
+			} catch {}
+			return;
+		}
+		if (action === "focus") {
+			try {
+				const rec = getRecByTile(tile);
+				if (!rec) return;
+				const id = rec.instanceId;
+				const isNowFocused = !focusedIds.has(id);
+				if (isNowFocused) {
+					focusedIds.add(id);
+					tile.classList.add("focused");
+					btn.setAttribute("aria-pressed", "true");
+					btn.title = "Unfocus";
+				} else {
+					focusedIds.delete(id);
+					tile.classList.remove("focused");
+					btn.setAttribute("aria-pressed", "false");
+					btn.title = "Focus (enlarge this tile)";
+				}
+				layoutGrid();
 			} catch {}
 			return;
 		}
@@ -2771,6 +2795,7 @@ window.addEventListener("online", () => {
 });
 
 function destroyTile(el, url) {
+	const idFromEl = (el && el.dataset && el.dataset.instanceId) || null;
 	for (const [key, rec] of players.entries()) {
 		if (rec.tile === el) {
 			try {
@@ -2787,6 +2812,10 @@ function destroyTile(el, url) {
 			break;
 		}
 	}
+	// remove focus state if present
+	try {
+		if (idFromEl) focusedIds.delete(idFromEl);
+	} catch {}
 	// remove the matching entry by instanceId if available, fallback to URL
 	try {
 		const rec = getRecByTile(el);
@@ -2830,6 +2859,9 @@ function removeAllTiles(save = true) {
 	players.clear();
 	streamEntries.splice(0, streamEntries.length);
 	try {
+		focusedIds.clear();
+	} catch {}
+	try {
 		if (save) saveList();
 	} catch {}
 	updateEmptyState();
@@ -2846,6 +2878,15 @@ function layoutGrid() {
 		grid.style.gridAutoRows = "1fr";
 		return;
 	}
+	// ensure tile elements reflect current focus state
+	try {
+		tiles.forEach((t) => {
+			const id = t.dataset.instanceId || getRecByTile(t)?.instanceId || "";
+			if (id && focusedIds.has(id)) t.classList.add("focused");
+			else t.classList.remove("focused");
+		});
+	} catch {}
+	// Do not mutate DOM order here; CSS 'order' handles visual priority
 	const gap =
 		parseFloat(getComputedStyle(grid).getPropertyValue("--gap")) || 10;
 	const vw = document.documentElement.clientWidth,
@@ -2857,8 +2898,20 @@ function layoutGrid() {
 		aspectH = 9;
 	let bestCols = 1,
 		bestScale = 0;
-	for (let cols = 1; cols <= n; cols++) {
-		const rows = Math.ceil(n / cols);
+	// compute effective number of cells accounting for focused tiles spanning multiple cells
+	const focusedCount = tiles.filter((t) =>
+		t.classList.contains("focused")
+	).length;
+	for (let cols = 1; cols <= Math.max(1, n + 3); cols++) {
+		// Maintain 16:9: make focused tiles 2x2 when possible; with 1 column, fall back to 1x1
+		const spanW = Math.min(2, cols);
+		const spanH = cols === 1 ? 1 : 2;
+		// effective total cell count: sum of weights (focused weight uses spanW*spanH)
+		const totalCells = tiles.reduce((acc, t) => {
+			const isFocused = t.classList.contains("focused");
+			return acc + (isFocused ? spanW * spanH : 1);
+		}, 0);
+		const rows = Math.ceil(totalCells / cols);
 		const totalGapW = gap * (cols - 1),
 			totalGapH = gap * (rows - 1);
 		const cellW = (availableW - totalGapW) / cols,
@@ -2874,6 +2927,20 @@ function layoutGrid() {
 		tileH = Math.floor(aspectH * bestScale);
 	grid.style.gridTemplateColumns = `repeat(${bestCols}, ${tileW}px)`;
 	grid.style.gridAutoRows = `${tileH}px`;
+	grid.style.gridAutoFlow = "dense"; // pack gaps tightly when focused tiles span multiple cells
+
+	// Apply per-tile spans based on focus state
+	const focusedSpanW = Math.min(2, bestCols);
+	const focusedSpanH = bestCols === 1 ? 1 : 2;
+	tiles.forEach((t) => {
+		if (t.classList.contains("focused")) {
+			t.style.gridColumn = `span ${focusedSpanW}`;
+			t.style.gridRow = `span ${focusedSpanH}`;
+		} else {
+			t.style.gridColumn = "span 1";
+			t.style.gridRow = "span 1";
+		}
+	});
 }
 
 const ro = new ResizeObserver(() => layoutGrid());
