@@ -2972,6 +2972,49 @@ function getRecByTile(tile) {
 // Global URL drag-and-drop: allow dropping a .m3u8 link anywhere to add it
 // Avoid interfering with tile reordering by ignoring drops while a tile is dragging
 (function setupGlobalDrop() {
+	// Lightweight visual overlay to guide users when dragging URLs
+	let _dropOverlay = null;
+	let _dragDepth = 0;
+	const showDropOverlay = () => {
+		try {
+			if (_dropOverlay) return;
+			const div = document.createElement("div");
+			div.className = "drop-overlay";
+			div.style.position = "fixed";
+			div.style.inset = "0";
+			div.style.display = "grid";
+			div.style.placeItems = "center";
+			div.style.background = "rgba(6, 8, 10, 0.35)";
+			div.style.backdropFilter = "blur(1px)";
+			div.style.color = "#e7edf5";
+			div.style.fontSize = "16px";
+			div.style.zIndex = "9999";
+			div.style.opacity = "0";
+			div.style.transition = "opacity 120ms ease";
+			div.style.pointerEvents = "none"; // don’t intercept drag events
+			const inner = document.createElement("div");
+			inner.style.padding = "10px 14px";
+			inner.style.border = "1px dashed rgba(231, 237, 245, 0.35)";
+			inner.style.borderRadius = "10px";
+			inner.style.background = "rgba(10, 15, 21, 0.55)";
+			inner.textContent = "Drop .m3u8 URL(s) to add";
+			div.appendChild(inner);
+			document.body.appendChild(div);
+			requestAnimationFrame(() => (div.style.opacity = "1"));
+			_dropOverlay = div;
+		} catch {}
+	};
+	const hideDropOverlay = () => {
+		try {
+			_dragDepth = 0;
+			if (_dropOverlay) {
+				const toRemove = _dropOverlay;
+				_dropOverlay = null;
+				toRemove.style.opacity = "0";
+				setTimeout(() => toRemove.remove(), 140);
+			}
+		} catch {}
+	};
 	const isUuid = (s) =>
 		typeof s === "string" &&
 		/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -3018,6 +3061,21 @@ function getRecByTile(tile) {
 		}
 	};
 	// Indicate we accept link drops when appropriate
+	window.addEventListener("dragenter", (e) => {
+		try {
+			if (document.querySelector(".tile.dragging")) return;
+			const types = (e.dataTransfer && e.dataTransfer.types) || [];
+			const hasUrl = Array.from(types).some(
+				(t) =>
+					(t + "").toLowerCase().includes("uri") ||
+					(t + "").toLowerCase().includes("text")
+			);
+			if (hasUrl) {
+				_dragDepth++;
+				showDropOverlay();
+			}
+		} catch {}
+	});
 	window.addEventListener("dragover", (e) => {
 		try {
 			// If a tile is being dragged for reordering, let that flow handle events
@@ -3035,8 +3093,15 @@ function getRecByTile(tile) {
 					"";
 				if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
 					return;
+				showDropOverlay();
 				e.preventDefault(); // allow drop
 			}
+		} catch {}
+	});
+	window.addEventListener("dragleave", (e) => {
+		try {
+			if (_dragDepth > 0) _dragDepth--;
+			if (_dragDepth <= 0) hideDropOverlay();
 		} catch {}
 	});
 	window.addEventListener("drop", (e) => {
@@ -3052,6 +3117,7 @@ function getRecByTile(tile) {
 			if (!urls.length) return;
 			e.preventDefault();
 			e.stopPropagation();
+			hideDropOverlay();
 			ensureCustomThen(() => addUrls(urls));
 		} catch {}
 	});
