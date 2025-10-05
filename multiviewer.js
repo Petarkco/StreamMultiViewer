@@ -3040,8 +3040,9 @@ function layoutGrid() {
 				markRange(rowStart + r, colStart, span);
 			heroPlaced++;
 		});
+		const firstOtherRow = heroRows * heroRowSpan + 1;
 		const placeOther = (tile) => {
-			let row = 1;
+			let row = firstOtherRow;
 			for (;;) {
 				const set = ensureRow(row);
 				let placed = false;
