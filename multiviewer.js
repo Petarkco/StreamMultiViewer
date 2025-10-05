@@ -2906,7 +2906,26 @@ function layoutGrid() {
 		const f = focusedTiles.length;
 		const m = others.length;
 
-		let best = null; // { totalCols, heroCols, colW, rowH, heroSpan, heroRowSpan, score }
+		const betterLayout = (cand, prev) => {
+			if (!prev) return true;
+			if (cand.fits && !prev.fits) return true;
+			if (!cand.fits && prev.fits) return false;
+			if (!cand.fits && !prev.fits) {
+				if (cand.overflow !== prev.overflow)
+					return cand.overflow < prev.overflow;
+			}
+			if (cand.heroScale !== prev.heroScale)
+				return cand.heroScale > prev.heroScale;
+			if (cand.otherScale !== prev.otherScale)
+				return cand.otherScale > prev.otherScale;
+			if (cand.heroCols !== prev.heroCols) return cand.heroCols < prev.heroCols;
+			if (cand.totalCols !== prev.totalCols)
+				return cand.totalCols < prev.totalCols;
+			if (cand.rowH !== prev.rowH) return cand.rowH > prev.rowH;
+			return cand.colW > prev.colW;
+		};
+
+		let best = null;
 		const maxTotalCols = Math.min(
 			8,
 			Math.max(1, f + Math.max(1, Math.min(m, 6)))
@@ -2916,83 +2935,88 @@ function layoutGrid() {
 			if (colW <= 0) continue;
 			const rowH = (colW * aspectH) / aspectW;
 			for (let heroCols = 1; heroCols <= Math.min(f, totalCols); heroCols++) {
-				let heroSpan = Math.floor(totalCols / heroCols);
-				if (heroSpan < 1) heroSpan = 1;
-				if (heroSpan === 1 && totalCols > heroCols)
-					heroSpan = Math.min(2, totalCols);
-				const heroWidth = heroSpan * colW + (heroSpan - 1) * gap;
-				const heroHeight = (heroWidth * aspectH) / aspectW;
-				let heroRowSpan = Math.max(1, Math.round(heroHeight / rowH));
-				if (heroSpan > 1 && heroRowSpan < 2) heroRowSpan = 2;
+				let baseSpan = Math.floor(totalCols / heroCols);
+				if (baseSpan < 1) baseSpan = 1;
+				const spans = new Array(heroCols).fill(baseSpan);
+				let leftover = totalCols - baseSpan * heroCols;
+				for (let i = 0; i < heroCols && leftover > 0; i++, leftover--)
+					spans[i]++;
+				const minSpan = Math.min(...spans);
+				const maxSpan = Math.max(...spans);
+				const minHeroWidth =
+					minSpan * colW + (minSpan > 0 ? (minSpan - 1) * gap : 0);
+				let heroRowSpan = Math.max(
+					1,
+					Math.round((minHeroWidth * aspectH) / (aspectW * rowH))
+				);
+				if (maxSpan > 1 && heroRowSpan < 2) heroRowSpan = 2;
 				const heroRows = Math.ceil(f / heroCols);
-				const heightHeroes =
+				let heroRowsHeight =
 					heroRows * (heroRowSpan * rowH) + (heroRows - 1) * gap;
-				const smallCols = totalCols; // same column template for all rows
-				const smallRows = m > 0 ? Math.ceil(m / smallCols) : 0;
-				const heightSmall =
+				const smallRows = m > 0 ? Math.ceil(m / totalCols) : 0;
+				const smallHeight =
 					smallRows * rowH + (smallRows > 0 ? (smallRows - 1) * gap : 0);
-				const totalHeight =
-					heightHeroes + (m > 0 && f > 0 ? gap : 0) + heightSmall;
-				const overflow = totalHeight - availableH;
-				// Prefer fits (no overflow) with larger rowH; otherwise minimal overflow, then larger rowH
-				const heroSizeBonus =
-					m > 0 && totalCols > 1 && heroSpan > 1
-						? heroSpan * heroRowSpan * 1e6
-						: 0;
-				const score =
-					(overflow <= 0 ? 1 : 0) * 1e9 -
-					Math.max(0, overflow) * 1e6 +
-					rowH +
-					heroSizeBonus;
-				if (!best || score > best.score) {
-					best = {
-						totalCols,
-						heroCols,
-						colW,
-						rowH,
-						heroSpan,
-						heroRowSpan,
-						score,
-						heroRows,
-						smallRows,
-						overflow,
-					};
+				let totalHeight =
+					heroRowsHeight + (m > 0 && f > 0 ? gap : 0) + smallHeight;
+				let overflow = totalHeight - availableH;
+				while (overflow > 0 && heroRowSpan > 1) {
+					heroRowSpan--;
+					heroRowsHeight =
+						heroRows * (heroRowSpan * rowH) + (heroRows - 1) * gap;
+					totalHeight =
+						heroRowsHeight + (m > 0 && f > 0 ? gap : 0) + smallHeight;
+					overflow = totalHeight - availableH;
 				}
+				const heroHeightPx =
+					heroRowSpan * rowH + (heroRowSpan > 0 ? (heroRowSpan - 1) * gap : 0);
+				const heroScale = Math.min(
+					minHeroWidth / aspectW,
+					heroHeightPx / aspectH
+				);
+				const otherScale = Math.min(colW / aspectW, rowH / aspectH);
+				const candidate = {
+					totalCols,
+					heroCols,
+					colW,
+					rowH,
+					spans,
+					heroRowSpan,
+					heroRows,
+					smallRows,
+					overflow,
+					fits: overflow <= 0,
+					heroScale,
+					otherScale,
+				};
+				if (betterLayout(candidate, best)) best = candidate;
 			}
 		}
-		if (!best) return; // should not happen
+		if (!best) return;
 
-		const { totalCols, colW, rowH, heroCols, heroSpan, heroRows } = best;
-		let { heroRowSpan } = best;
-		if (best.overflow > 0 && heroRowSpan > 1) {
-			// Try to shrink heroes vertically to eliminate overflow
-			const smallRows = m > 0 ? Math.ceil(m / totalCols) : 0;
-			const usedSmall =
-				smallRows * rowH + (smallRows > 0 ? (smallRows - 1) * gap : 0);
-			const budget =
-				availableH - usedSmall - (heroRows - 1) * gap - (m > 0 ? gap : 0);
-			const maxSpanPerHero = Math.max(
-				1,
-				Math.floor(budget / Math.max(1, heroRows * rowH))
-			);
-			heroRowSpan = Math.max(1, Math.min(heroRowSpan, maxSpanPerHero));
-		}
+		const { totalCols, colW, rowH, heroCols, heroRowSpan, heroRows, spans } =
+			best;
 
-		const tileWpx = Math.floor(colW);
-		const tileHpx = Math.max(1, Math.floor(rowH));
+		const tileWpx = Math.max(1, colW);
+		const tileHpx = Math.max(1, rowH);
 		grid.style.gridTemplateColumns = `repeat(${totalCols}, ${tileWpx}px)`;
 		grid.style.gridAutoRows = `${tileHpx}px`;
-		grid.style.gridAutoFlow = "row"; // keep others below heroes
+		grid.style.gridAutoFlow = "row";
 
-		// Apply spans per tile
+		const heroOffsets = [];
+		let accCols = 0;
+		for (let i = 0; i < spans.length; i++) {
+			heroOffsets.push(accCols);
+			accCols += spans[i];
+		}
 		const heroTotalRows = heroRows * heroRowSpan;
 		let heroPlaced = 0;
 		focusedTiles.forEach((t) => {
 			const heroRowIndex = Math.floor(heroPlaced / heroCols);
 			const heroColIndex = heroPlaced % heroCols;
-			const colStart = heroColIndex * heroSpan + 1;
+			const span = spans[heroColIndex] || spans[spans.length - 1] || 1;
+			const colStart = (heroOffsets[heroColIndex] || 0) + 1;
 			const rowStart = heroRowIndex * heroRowSpan + 1;
-			t.style.gridColumn = `${colStart} / span ${heroSpan}`;
+			t.style.gridColumn = `${colStart} / span ${span}`;
 			t.style.gridRow = `${rowStart} / span ${heroRowSpan}`;
 			t.style.gridColumnStart = `${colStart}`;
 			t.style.gridRowStart = `${rowStart}`;
