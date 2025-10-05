@@ -20,182 +20,6 @@ let settings = {
 // When showSubtitlesByDefault is enabled, mark tiles with _autoSubtitle=true
 // so we can select the first available subtitle track (HLS then native).
 
-const dragState = {
-	sourceId: null,
-	sourceTile: null,
-	placeholder: null,
-	placeholderHeight: 0,
-};
-
-function ensureDragPlaceholder(sourceTile) {
-	if (!dragState.placeholder) {
-		const placeholder = document.createElement("div");
-		placeholder.className = "drop-placeholder";
-		placeholder.setAttribute("aria-hidden", "true");
-		dragState.placeholder = placeholder;
-	}
-	const placeholder = dragState.placeholder;
-	if (sourceTile) {
-		const rect = sourceTile.getBoundingClientRect();
-		dragState.placeholderHeight = rect.height || dragState.placeholderHeight;
-	}
-	if (dragState.placeholderHeight) {
-		placeholder.style.height = `${dragState.placeholderHeight}px`;
-		placeholder.style.minHeight = `${dragState.placeholderHeight}px`;
-	} else {
-		placeholder.style.removeProperty("height");
-		placeholder.style.removeProperty("minHeight");
-	}
-	return placeholder;
-}
-
-function moveDragPlaceholder(targetTile, placeBefore) {
-	const placeholder = ensureDragPlaceholder(dragState.sourceTile);
-	if (!placeholder || !grid) return;
-	if (!targetTile || !targetTile.parentNode) {
-		grid.appendChild(placeholder);
-		return;
-	}
-	if (targetTile === placeholder) return;
-	const parent = targetTile.parentNode;
-	const reference = placeBefore ? targetTile : targetTile.nextSibling;
-	parent.insertBefore(placeholder, reference);
-}
-
-function removeDropTargetHighlights() {
-	if (!grid) return;
-	grid
-		.querySelectorAll(
-			".tile.drop-target, .tile.drop-target-before, .tile.drop-target-after"
-		)
-		.forEach((el) => {
-			el.classList.remove(
-				"drop-target",
-				"drop-target-before",
-				"drop-target-after"
-			);
-		});
-}
-
-function clearDragState(restoreSource = true) {
-	if (dragState.placeholder) {
-		try {
-			if (dragState.placeholder.parentNode)
-				dragState.placeholder.parentNode.removeChild(dragState.placeholder);
-		} catch {}
-		dragState.placeholder.style.removeProperty("height");
-		dragState.placeholder.style.removeProperty("minHeight");
-	}
-	if (restoreSource && dragState.sourceTile) {
-		dragState.sourceTile.classList.remove("drag-source-hidden");
-		dragState.sourceTile.style.removeProperty("display");
-		dragState.sourceTile.style.removeProperty("opacity");
-		dragState.sourceTile.style.removeProperty("visibility");
-	}
-	dragState.sourceId = null;
-	dragState.sourceTile = null;
-	dragState.placeholder = null;
-	dragState.placeholderHeight = 0;
-}
-
-function reorderTiles(fromId, toId, placeBefore = true) {
-	if (!(feedSelector && feedSelector.value === "custom")) {
-		clearDragState(true);
-		return;
-	}
-	const fromIdx = streamEntries.findIndex(
-		(entry) => entry.instanceId === fromId
-	);
-	if (fromIdx === -1) {
-		clearDragState(true);
-		return;
-	}
-	const moved = streamEntries.splice(fromIdx, 1)[0];
-	let resolvedTargetId = toId || null;
-	let resolvedPlaceBefore = !!placeBefore;
-	if (dragState.placeholder && dragState.placeholder.parentNode === grid) {
-		const nextTile = dragState.placeholder.nextElementSibling;
-		const prevTile = dragState.placeholder.previousElementSibling;
-		if (nextTile && nextTile.classList && nextTile.classList.contains("tile")) {
-			const nextId = nextTile.dataset
-				? nextTile.dataset.instanceId || null
-				: null;
-			if (nextId && nextId !== fromId) {
-				resolvedTargetId = nextId;
-				resolvedPlaceBefore = true;
-			}
-		}
-		if (
-			(!resolvedTargetId || resolvedTargetId === fromId) &&
-			prevTile &&
-			prevTile.classList &&
-			prevTile.classList.contains("tile")
-		) {
-			const prevId = prevTile.dataset
-				? prevTile.dataset.instanceId || null
-				: null;
-			if (prevId && prevId !== fromId) {
-				resolvedTargetId = prevId;
-				resolvedPlaceBefore = false;
-			}
-		}
-		if (resolvedTargetId === fromId) resolvedTargetId = null;
-	}
-	if (!resolvedTargetId && toId && toId !== fromId) {
-		resolvedTargetId = toId;
-		resolvedPlaceBefore = !!placeBefore;
-	}
-	let insertIndex;
-	if (resolvedTargetId) {
-		let targetIdx = streamEntries.findIndex(
-			(entry) => entry.instanceId === resolvedTargetId
-		);
-		if (targetIdx === -1) targetIdx = streamEntries.length;
-		insertIndex = resolvedPlaceBefore ? targetIdx : targetIdx + 1;
-	} else {
-		insertIndex = streamEntries.length;
-	}
-	if (insertIndex < 0) insertIndex = 0;
-	if (insertIndex > streamEntries.length) insertIndex = streamEntries.length;
-	streamEntries.splice(insertIndex, 0, moved);
-	saveList();
-	try {
-		const sourceTile =
-			dragState.sourceTile ||
-			Array.from(grid.querySelectorAll(".tile")).find(
-				(t) => t.dataset && t.dataset.instanceId === fromId
-			);
-		if (sourceTile) {
-			sourceTile.classList.remove("drag-source-hidden");
-			sourceTile.style.removeProperty("display");
-			sourceTile.style.removeProperty("opacity");
-			sourceTile.style.removeProperty("visibility");
-			if (dragState.placeholder && dragState.placeholder.parentNode) {
-				dragState.placeholder.parentNode.insertBefore(
-					sourceTile,
-					dragState.placeholder
-				);
-			} else if (resolvedTargetId) {
-				const targetTile = Array.from(grid.querySelectorAll(".tile")).find(
-					(t) => t.dataset && t.dataset.instanceId === resolvedTargetId
-				);
-				const parent = targetTile?.parentNode || grid;
-				const reference = resolvedPlaceBefore
-					? targetTile
-					: targetTile
-					? targetTile.nextSibling
-					: null;
-				parent.insertBefore(sourceTile, reference);
-			} else {
-				grid.appendChild(sourceTile);
-			}
-		}
-	} catch {}
-	removeDropTargetHighlights();
-	clearDragState(false);
-	layoutGrid();
-}
-
 function loadSettings() {
 	try {
 		const raw = localStorage.getItem(SETTINGS_KEY);
@@ -581,68 +405,55 @@ function addStreamTile(url, passedInstanceId, labelText) {
 				e.dataTransfer.effectAllowed = "move";
 				e.dataTransfer.setData("text/plain", tile.dataset.instanceId);
 			}
-			dragState.sourceId = tile.dataset.instanceId || null;
-			dragState.sourceTile = tile;
-			ensureDragPlaceholder(tile);
-			moveDragPlaceholder(tile, true);
-			removeDropTargetHighlights();
-			setTimeout(() => {
-				if (dragState.sourceTile === tile)
-					tile.classList.add("drag-source-hidden");
-			}, 0);
 		});
 		tile.addEventListener("dragend", () => {
 			tile.classList.remove("dragging");
-			removeDropTargetHighlights();
-			clearDragState(true);
-			layoutGrid();
+			grid
+				.querySelectorAll(".tile.drop-target")
+				.forEach((t) => t.classList.remove("drop-target"));
 		});
 		tile.addEventListener("dragover", (e) => {
-			if (!dragState.sourceId) return;
 			e.preventDefault();
-			e.stopPropagation();
 			if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-			const rect = tile.getBoundingClientRect();
-			const dropBefore = e.clientY < rect.top + rect.height / 2;
 			tile.classList.add("drop-target");
-			tile.classList.toggle("drop-target-before", dropBefore);
-			tile.classList.toggle("drop-target-after", !dropBefore);
-			if (tile.dataset.instanceId === dragState.sourceId) {
-				moveDragPlaceholder(tile, true);
-				return;
-			}
-			moveDragPlaceholder(tile, dropBefore);
 		});
 		tile.addEventListener("dragleave", () => {
-			tile.classList.remove(
-				"drop-target",
-				"drop-target-before",
-				"drop-target-after"
-			);
+			tile.classList.remove("drop-target");
 		});
 		tile.addEventListener("drop", (e) => {
-			if (!dragState.sourceId) return;
-			let fromId = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
-			if (!fromId) fromId = dragState.sourceId || "";
-			if (!fromId || fromId !== dragState.sourceId) return;
-			const toId = tile.dataset.instanceId;
-			if (!toId) return;
 			e.preventDefault();
-			e.stopPropagation();
-			tile.classList.remove(
-				"drop-target",
-				"drop-target-before",
-				"drop-target-after"
-			);
-			const rect = tile.getBoundingClientRect();
-			const dropBefore = e.clientY < rect.top + rect.height / 2;
-			if (fromId === toId) {
-				clearDragState(true);
-				layoutGrid();
-				return;
-			}
-			reorderTiles(fromId, toId, dropBefore);
+			tile.classList.remove("drop-target");
+			const fromId = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
+			const toId = tile.dataset.instanceId;
+			if (!fromId || !toId || fromId === toId) return;
+			reorderTiles(fromId, toId);
 		});
+	}
+	// Reorder streamEntries and re-render grid
+	function reorderTiles(fromId, toId) {
+		// Only reorder in Custom mode
+		if (!(feedSelector && feedSelector.value === "custom")) return;
+		const fromIdx = streamEntries.findIndex((e) => e.instanceId === fromId);
+		const toIdx = streamEntries.findIndex((e) => e.instanceId === toId);
+		if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+		const moved = streamEntries.splice(fromIdx, 1)[0];
+		// insert before the target index (matching DOM insertBefore behavior)
+		streamEntries.splice(toIdx, 0, moved);
+		saveList();
+		// Reorder DOM nodes without destroying players
+		try {
+			const tiles = Array.from(grid.querySelectorAll(".tile"));
+			const fromTile = tiles.find(
+				(t) => t.dataset && t.dataset.instanceId === fromId
+			);
+			const toTile = tiles.find(
+				(t) => t.dataset && t.dataset.instanceId === toId
+			);
+			if (fromTile && toTile && fromTile !== toTile) {
+				grid.insertBefore(fromTile, toTile);
+			}
+		} catch {}
+		layoutGrid();
 	}
 	const video = document.createElement("video");
 	video.setAttribute("playsinline", "");
@@ -735,98 +546,6 @@ function addStreamTile(url, passedInstanceId, labelText) {
 		topLabel.className = "top-left-label";
 		topLabel.textContent = labelText;
 		tile.appendChild(topLabel);
-	}
-
-	// Allow drag to start from inner elements (video/overlays) in custom mode
-	if (isCustomMode) {
-		const attachInnerDrag = (el) => {
-			if (!el) return;
-			try {
-				el.setAttribute("draggable", "true");
-			} catch {}
-			// Start drag from the inner element as if it started on the tile
-			el.addEventListener("dragstart", (e) => {
-				// mirror tile's dragstart logic
-				tile.classList.add("dragging");
-				if (e.dataTransfer) {
-					e.dataTransfer.effectAllowed = "move";
-					e.dataTransfer.setData("text/plain", tile.dataset.instanceId || "");
-				}
-				dragState.sourceId = tile.dataset.instanceId || null;
-				dragState.sourceTile = tile;
-				ensureDragPlaceholder(tile);
-				moveDragPlaceholder(tile, true);
-				removeDropTargetHighlights();
-				// Let the UA capture a drag image before hiding the source
-				setTimeout(() => {
-					if (dragState.sourceTile === tile)
-						tile.classList.add("drag-source-hidden");
-				}, 0);
-				e.stopPropagation();
-			});
-			el.addEventListener("dragover", (e) => {
-				if (!dragState.sourceId) return;
-				e.preventDefault();
-				e.stopPropagation();
-				if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-				const rect = tile.getBoundingClientRect();
-				const dropBefore = e.clientY < rect.top + rect.height / 2;
-				tile.classList.add("drop-target");
-				tile.classList.toggle("drop-target-before", dropBefore);
-				tile.classList.toggle("drop-target-after", !dropBefore);
-				if (tile.dataset.instanceId === dragState.sourceId) {
-					moveDragPlaceholder(tile, true);
-					return;
-				}
-				moveDragPlaceholder(tile, dropBefore);
-			});
-			el.addEventListener("dragleave", () => {
-				tile.classList.remove(
-					"drop-target",
-					"drop-target-before",
-					"drop-target-after"
-				);
-			});
-			el.addEventListener("drop", (e) => {
-				if (!dragState.sourceId) return;
-				let fromId = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
-				if (!fromId) fromId = dragState.sourceId || "";
-				if (!fromId || fromId !== dragState.sourceId) return;
-				const toId = tile.dataset.instanceId;
-				if (!toId) return;
-				e.preventDefault();
-				e.stopPropagation();
-				tile.classList.remove(
-					"drop-target",
-					"drop-target-before",
-					"drop-target-after"
-				);
-				const rect = tile.getBoundingClientRect();
-				const dropBefore = e.clientY < rect.top + rect.height / 2;
-				if (fromId === toId) {
-					clearDragState(true);
-					layoutGrid();
-					return;
-				}
-				reorderTiles(fromId, toId, dropBefore);
-			});
-			el.addEventListener("dragend", () => {
-				tile.classList.remove("dragging");
-				removeDropTargetHighlights();
-				clearDragState(true);
-				layoutGrid();
-			});
-		};
-		// Attach to key inner elements
-		attachInnerDrag(video);
-		attachInnerDrag(actions);
-		attachInnerDrag(bottom);
-		attachInnerDrag(spinnerOverlay);
-		attachInnerDrag(debugPanel);
-		try {
-			const maybeLabel = tile.querySelector(".top-left-label");
-			attachInnerDrag(maybeLabel);
-		} catch {}
 	}
 
 	// apply settings defaults (muted/autoplay and debug visibility)
@@ -1406,76 +1125,6 @@ function addStreamTile(url, passedInstanceId, labelText) {
 	setupPlayer(rec);
 	startHealthCheck(rec);
 	layoutGrid();
-}
-
-if (grid) {
-	const nearestTileForPoint = (x, y) => {
-		const tiles = Array.from(grid.querySelectorAll(".tile"));
-		if (!tiles.length) return null;
-		let best = null;
-		let bestDist = Infinity;
-		for (const candidate of tiles) {
-			if (candidate.classList.contains("drag-source-hidden")) continue;
-			const rect = candidate.getBoundingClientRect();
-			const clampedX = Math.min(Math.max(x, rect.left), rect.right);
-			const clampedY = Math.min(Math.max(y, rect.top), rect.bottom);
-			const dx = x - clampedX;
-			const dy = y - clampedY;
-			const dist = dx * dx + dy * dy;
-			if (dist < bestDist) {
-				bestDist = dist;
-				best = candidate;
-			}
-		}
-		return best;
-	};
-
-	grid.addEventListener("dragover", (e) => {
-		if (!dragState.sourceId) return;
-		const targetTile =
-			e.target && e.target.closest ? e.target.closest(".tile") : null;
-		if (targetTile) return; // tile handlers manage tile-centered dragovers
-		e.preventDefault();
-		e.stopPropagation();
-		if (e.dataTransfer) {
-			try {
-				e.dataTransfer.dropEffect = "move";
-			} catch {}
-		}
-		const bestTile = nearestTileForPoint(e.clientX, e.clientY);
-		if (bestTile) {
-			const rect = bestTile.getBoundingClientRect();
-			let dropBefore;
-			if (e.clientY < rect.top) dropBefore = true;
-			else if (e.clientY > rect.bottom) dropBefore = false;
-			else if (e.clientX < rect.left) dropBefore = true;
-			else if (e.clientX > rect.right) dropBefore = false;
-			else dropBefore = e.clientX < rect.left + rect.width / 2;
-			removeDropTargetHighlights();
-			bestTile.classList.add("drop-target");
-			bestTile.classList.toggle("drop-target-before", dropBefore);
-			bestTile.classList.toggle("drop-target-after", !dropBefore);
-			moveDragPlaceholder(bestTile, dropBefore);
-			return;
-		}
-		removeDropTargetHighlights();
-		moveDragPlaceholder(null, false);
-	});
-
-	grid.addEventListener("drop", (e) => {
-		if (!dragState.sourceId) return;
-		e.preventDefault();
-		e.stopPropagation();
-		removeDropTargetHighlights();
-		reorderTiles(dragState.sourceId, null, true);
-	});
-
-	grid.addEventListener("dragleave", (e) => {
-		if (!dragState.sourceId) return;
-		const next = e.relatedTarget;
-		if (next && grid.contains(next)) return;
-		removeDropTargetHighlights();
-	});
 }
 
 function setupPlayer(rec) {
@@ -3228,8 +2877,6 @@ function layoutGrid() {
 	);
 	const aspectW = 16,
 		aspectH = 9;
-	const WIDTH_WASTE_WEIGHT = 1.35;
-	const EPSILON = 1e-3;
 	let best = null;
 	for (let cols = 1; cols <= n; cols++) {
 		const rows = Math.ceil(n / cols);
@@ -3245,9 +2892,9 @@ function layoutGrid() {
 		const usedH = tileH * rows + totalGapH;
 		const unusedW = Math.max(0, availableW - usedW);
 		const unusedH = Math.max(0, availableH - usedH);
-		const widthWaste = availableW > 0 ? unusedW / availableW : 0;
-		const heightWaste = availableH > 0 ? unusedH / availableH : 0;
-		const weightedWaste = widthWaste * WIDTH_WASTE_WEIGHT + heightWaste;
+		const relativeWaste =
+			(availableW > 0 ? unusedW / availableW : 0) +
+			(availableH > 0 ? unusedH / availableH : 0);
 		const tileArea = tileW * tileH;
 		const candidate = {
 			cols,
@@ -3256,35 +2903,26 @@ function layoutGrid() {
 			tileH,
 			usedW,
 			usedH,
-			widthWaste,
-			heightWaste,
-			weightedWaste,
+			relativeWaste,
 			tileArea,
 		};
 		if (!best) {
 			best = candidate;
 			continue;
 		}
-		if (candidate.weightedWaste < best.weightedWaste - EPSILON) {
+		if (candidate.relativeWaste < best.relativeWaste - 1e-3) {
 			best = candidate;
 			continue;
 		}
 		if (
-			Math.abs(candidate.weightedWaste - best.weightedWaste) <= EPSILON &&
-			candidate.widthWaste < best.widthWaste - EPSILON
-		) {
-			best = candidate;
-			continue;
-		}
-		if (
-			Math.abs(candidate.weightedWaste - best.weightedWaste) <= EPSILON &&
+			Math.abs(candidate.relativeWaste - best.relativeWaste) <= 1e-3 &&
 			candidate.tileArea > best.tileArea + 1
 		) {
 			best = candidate;
 			continue;
 		}
 		if (
-			Math.abs(candidate.weightedWaste - best.weightedWaste) <= EPSILON &&
+			Math.abs(candidate.relativeWaste - best.relativeWaste) <= 1e-3 &&
 			Math.abs(candidate.tileArea - best.tileArea) <= 1 &&
 			candidate.cols > best.cols
 		) {
