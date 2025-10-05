@@ -1,120 +1,33 @@
 const LS_KEY = "multiHlsUrls";
 const players = new Map(); // id -> { hls, video, url, tile, backoffMs, lastTime, healthTimer, needsHeal }
 const streamEntries = []; // duplicates allowed; each entry: { url, instanceId }
-// Track tiles marked as "focused" (enlarged in layout). Not persisted on purpose.
-const focusedIds = new Set();
 
 const grid = document.getElementById("grid");
-const heroGrid = (() => {
-	let existing = document.getElementById("heroGrid");
-	if (existing) return existing;
-	if (!grid || !grid.parentNode) return null;
-	const el = document.createElement("div");
-	el.id = "heroGrid";
-	el.className = "grid hero-grid";
-	el.hidden = true;
-	grid.parentNode.insertBefore(el, grid);
-	return el;
-})();
 const input = document.getElementById("urlInput");
-				rec._debugTimer = null;
-				rec._debugEvents = null;
-			} catch {}
-			rec.tile.remove();
-		} catch {}
-	}
-	players.clear();
-	streamEntries.splice(0, streamEntries.length);
-	try {
-		focusedIds.clear();
-	} catch {}
-	try {
-		if (save) saveList();
-	} catch {}
-	updateEmptyState();
-}
+const addBtn = document.getElementById("addBtn");
+const clearBtn = document.getElementById("clearBtn");
+const toolbar = document.getElementById("toolbar");
+const feedSelector = document.getElementById("feedSelector");
+const settingsBtn = document.getElementById("settingsBtn");
+// token used to cancel/ignore in-flight preset loaders (especially the async 9now probe)
+let presetLoadToken = 0;
+const SETTINGS_KEY = "mv_settings";
+let settings = {
+	showDebugByDefault: false,
+	autoplayMuted: true,
+	showSubtitlesByDefault: false,
+};
+// When showSubtitlesByDefault is enabled, mark tiles with _autoSubtitle=true
+// so we can select the first available subtitle track (HLS then native).
 
-<<<<<<< HEAD
-const HERO_TILE_PREFERRED_WIDTH = 480;
-const HERO_TILE_MIN_WIDTH = 260;
-const MIN_REGULAR_TILE_HEIGHT = 160;
-
-function layoutHeroSection(
-	container,
-	tiles,
-	availableWidth,
-	gap,
-	aspectW,
-	aspectH
-) {
-	if (!container || tiles.length === 0) return 0;
-	const viewportLimit = Math.max(
-		HERO_TILE_MIN_WIDTH,
-		document.documentElement.clientWidth - 12
-	);
-	const widthLimit = Math.min(
-		Math.max(availableWidth, HERO_TILE_MIN_WIDTH),
-		viewportLimit
-	);
-	const maxCols = Math.min(tiles.length, 6);
-	let best = null;
-	let fallback = null;
-	for (let cols = 1; cols <= Math.max(1, maxCols); cols++) {
-		const totalGap = gap * (cols - 1);
-		const allowedWidth = widthLimit - totalGap;
-		if (allowedWidth <= 0) continue;
-		const maxTileW = allowedWidth / cols;
-		if (maxTileW <= 0) continue;
-		const desiredTileW = Math.min(HERO_TILE_PREFERRED_WIDTH, maxTileW);
-		const tileW = Math.max(Math.min(desiredTileW, maxTileW), HERO_TILE_MIN_WIDTH);
-		const tileH = (tileW * aspectH) / aspectW;
-		const rows = Math.max(1, Math.ceil(tiles.length / cols));
-		const candidate = {
-			cols,
-			tileW,
-			tileH,
-			rows,
-			maxTileW,
-		};
-		if (maxTileW < HERO_TILE_MIN_WIDTH) {
-			if (!fallback || maxTileW > fallback.maxTileW) fallback = candidate;
-			continue;
-		}
-		if (
-			!best ||
-			tileH > best.tileH ||
-			(tileH === best.tileH && rows < best.rows) ||
-			(tileH === best.tileH && rows === best.rows && tileW > best.tileW)
-		) {
-			best = candidate;
-		}
-	}
-	if (!best) best = fallback;
-	if (!best) return 0;
-	const tileW = Math.max(1, Math.round(best.tileW));
-	const tileH = Math.max(1, Math.round(best.tileH));
-	const usedWidth = tileW * best.cols + gap * Math.max(0, best.cols - 1);
-	container.style.gridTemplateColumns = `repeat(${best.cols}, ${tileW}px)`;
-	container.style.gridAutoRows = `${tileH}px`;
-	container.style.gridAutoFlow = "row";
-	container.style.gridTemplateRows = "";
-	container.style.height = "auto";
-	container.style.minHeight = "0";
-	container.style.width = `${Math.min(widthLimit, usedWidth)}px`;
-	container.style.maxWidth = `${widthLimit}px`;
-	container.style.margin = "0 auto";
-	tiles.forEach((tile) => {
-		tile.style.gridColumn = "span 1";
-		tile.style.gridRow = "span 1";
-		tile.style.gridColumnStart = "";
-		tile.style.gridRowStart = "";
-		tile.style.zIndex = "3";
-=======
-function getAllTiles() {
-	const list = [];
-	if (heroGrid) list.push(...heroGrid.querySelectorAll(".tile"));
-	if (grid) list.push(...grid.querySelectorAll(".tile"));
-	return list;
+function loadSettings() {
+	try {
+		const raw = localStorage.getItem(SETTINGS_KEY);
+		if (!raw) return;
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed === "object")
+			settings = Object.assign(settings, parsed);
+	} catch {}
 }
 
 // Enable/disable toolbar controls depending on view mode
@@ -176,8 +89,6 @@ function saveSettings() {
 	try {
 		localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 	} catch {}
-	heroContainer.style.height = "";
-	heroContainer.style.minHeight = "";
 }
 
 // create a simple settings menu when clicking the settings button
@@ -248,10 +159,30 @@ if (settingsBtn) {
 			};
 			setTimeout(() => document.addEventListener("click", off));
 		} catch (e) {}
->>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
 	});
-	return best.rows * tileH + (best.rows > 1 ? (best.rows - 1) * gap : 0);
 }
+
+// apply settings when creating tiles (used in addStreamTile)
+
+// restore saved view mode (persist between reloads)
+try {
+	const saved = localStorage.getItem("mv_viewMode");
+	if (saved && feedSelector) feedSelector.value = saved;
+} catch {}
+
+if (feedSelector) {
+	feedSelector.addEventListener("change", () => {
+		try {
+			localStorage.setItem("mv_viewMode", feedSelector.value);
+		} catch {}
+		// enable/disable toolbar controls immediately
+		try {
+			updateToolbarState();
+		} catch {}
+		const mode = feedSelector.value;
+		if (mode === "custom") {
+			// cancel any in-flight preset loaders
+			try {
 				presetLoadToken++;
 			} catch {}
 			// restore any saved custom streams from localStorage
@@ -275,29 +206,26 @@ if (settingsBtn) {
 	});
 }
 
-// When ch9 mode is selected, show city labels only while the pointer is over
-// any tile. Apply the same behaviour for both the hero stack and regular grid.
-const attachCh9HoverHandlers = (container) => {
-	if (!container) return;
-	container.addEventListener("pointermove", (e) => {
-		try {
-			if (!feedSelector || feedSelector.value !== "ch9") return;
-			const overTile =
-				!!e.target && !!e.target.closest && e.target.closest(".tile");
-			if (overTile) container.classList.add("show-all-labels");
-			else container.classList.remove("show-all-labels");
-		} catch {}
-	});
-	container.addEventListener("pointerleave", () => {
-		try {
-			if (feedSelector && feedSelector.value === "ch9")
-				container.classList.remove("show-all-labels");
-		} catch {}
-	});
-};
-
-attachCh9HoverHandlers(grid);
-attachCh9HoverHandlers(heroGrid);
+// When ch9 mode is selected, show all city labels only while the pointer is
+// directly over a tile. Previously we showed labels for any pointer inside
+// the grid which left labels visible when the cursor was between tiles.
+// Use pointermove to detect when the pointer is over a .tile and pointerleave
+// to clear the state when leaving the grid entirely.
+grid.addEventListener("pointermove", (e) => {
+	try {
+		if (!feedSelector || feedSelector.value !== "ch9") return;
+		const overTile =
+			!!e.target && !!e.target.closest && e.target.closest(".tile");
+		if (overTile) grid.classList.add("show-all-labels");
+		else grid.classList.remove("show-all-labels");
+	} catch {}
+});
+grid.addEventListener("pointerleave", () => {
+	try {
+		if (feedSelector && feedSelector.value === "ch9")
+			grid.classList.remove("show-all-labels");
+	} catch {}
+});
 
 addBtn.addEventListener("click", () => {
 	const raw = input.value.trim();
@@ -440,9 +368,11 @@ function loadPresets(mode) {
 }
 
 function updateEmptyState() {
-	const totalTiles = getAllTiles().length;
+	const hasTile = [...grid.children].some((el) =>
+		el.classList.contains("tile")
+	);
 	const existing = grid.querySelector(".empty");
-	if (totalTiles === 0) {
+	if (!hasTile) {
 		if (!existing) {
 			const div = document.createElement("div");
 			div.className = "empty";
@@ -512,7 +442,7 @@ function addStreamTile(url, passedInstanceId, labelText) {
 		saveList();
 		// Reorder DOM nodes without destroying players
 		try {
-			const tiles = getAllTiles();
+			const tiles = Array.from(grid.querySelectorAll(".tile"));
 			const fromTile = tiles.find(
 				(t) => t.dataset && t.dataset.instanceId === fromId
 			);
@@ -520,10 +450,7 @@ function addStreamTile(url, passedInstanceId, labelText) {
 				(t) => t.dataset && t.dataset.instanceId === toId
 			);
 			if (fromTile && toTile && fromTile !== toTile) {
-				const parent = toTile.parentNode || grid;
-				if (parent && parent.contains(toTile)) {
-					parent.insertBefore(fromTile, toTile);
-				}
+				grid.insertBefore(fromTile, toTile);
 			}
 		} catch {}
 		layoutGrid();
@@ -563,7 +490,6 @@ function addStreamTile(url, passedInstanceId, labelText) {
 	// place debug icon first (left of other hover actions)
 	actions.innerHTML = `
 				<div class="icon-btn" title="Toggle debug info" data-action="debug" aria-pressed="false"><i class="ri-bug-line"></i></div>
-				<div class="icon-btn" title="Focus (enlarge this tile)" data-action="focus" aria-pressed="false"><i class="ri-focus-2-line"></i></div>
 				<div class="icon-btn" title="Open stream URL in a new tab" data-action="open"><i class="ri-external-link-line"></i></div>
 				<div class="icon-btn" title="Remove stream" data-action="close"><i class="ri-close-line"></i></div>
 			`;
@@ -656,27 +582,6 @@ function addStreamTile(url, passedInstanceId, labelText) {
 		if (action === "debug") {
 			try {
 				toggleDebugForTile(tile, btn);
-			} catch {}
-			return;
-		}
-		if (action === "focus") {
-			try {
-				const rec = getRecByTile(tile);
-				if (!rec) return;
-				const id = rec.instanceId;
-				const isNowFocused = !focusedIds.has(id);
-				if (isNowFocused) {
-					focusedIds.add(id);
-					tile.classList.add("focused");
-					btn.setAttribute("aria-pressed", "true");
-					btn.title = "Unfocus";
-				} else {
-					focusedIds.delete(id);
-					tile.classList.remove("focused");
-					btn.setAttribute("aria-pressed", "false");
-					btn.title = "Focus (enlarge this tile)";
-				}
-				layoutGrid();
 			} catch {}
 			return;
 		}
@@ -2866,7 +2771,6 @@ window.addEventListener("online", () => {
 });
 
 function destroyTile(el, url) {
-	const idFromEl = (el && el.dataset && el.dataset.instanceId) || null;
 	for (const [key, rec] of players.entries()) {
 		if (rec.tile === el) {
 			try {
@@ -2883,10 +2787,6 @@ function destroyTile(el, url) {
 			break;
 		}
 	}
-	// remove focus state if present
-	try {
-		if (idFromEl) focusedIds.delete(idFromEl);
-	} catch {}
 	// remove the matching entry by instanceId if available, fallback to URL
 	try {
 		const rec = getRecByTile(el);
@@ -2921,10 +2821,6 @@ function removeAllTiles(save = true) {
 			rec.video.load();
 			try {
 				if (rec._debugTimer) clearInterval(rec._debugTimer);
-		const HERO_TILE_PREFERRED_WIDTH = 480;
-		const HERO_TILE_MIN_WIDTH = 260;
-		const MIN_REGULAR_TILE_HEIGHT = 160;
-
 				rec._debugTimer = null;
 				rec._debugEvents = null;
 			} catch {}
@@ -2934,400 +2830,55 @@ function removeAllTiles(save = true) {
 	players.clear();
 	streamEntries.splice(0, streamEntries.length);
 	try {
-<<<<<<< HEAD
-			const viewportLimit = Math.max(
-				HERO_TILE_MIN_WIDTH,
-				document.documentElement.clientWidth - 12
-			);
-			const widthLimit = Math.min(
-				Math.max(availableWidth, HERO_TILE_MIN_WIDTH),
-				viewportLimit
-			);
-			const maxCols = Math.min(tiles.length, 6);
-			let best = null;
-			let fallback = null;
-			for (let cols = 1; cols <= Math.max(1, maxCols); cols++) {
-				const totalGap = gap * (cols - 1);
-				const allowedWidth = widthLimit - totalGap;
-				if (allowedWidth <= 0) continue;
-				const maxTileW = allowedWidth / cols;
-				if (maxTileW <= 0) continue;
-				const desiredTileW = Math.min(HERO_TILE_PREFERRED_WIDTH, maxTileW);
-				const tileW = Math.max(Math.min(desiredTileW, maxTileW), HERO_TILE_MIN_WIDTH);
-				const tileH = (tileW * aspectH) / aspectW;
-				const rows = Math.max(1, Math.ceil(tiles.length / cols));
-				const candidate = {
-					cols,
-					tileW,
-					tileH,
-					rows,
-					maxTileW,
-				};
-				if (maxTileW < HERO_TILE_MIN_WIDTH) {
-					if (!fallback || maxTileW > fallback.maxTileW) fallback = candidate;
-					continue;
-				}
-				if (
-					!best ||
-					tileH > best.tileH ||
-					(tileH === best.tileH && rows < best.rows) ||
-					(tileH === best.tileH && rows === best.rows && tileW > best.tileW)
-				) {
-					best = candidate;
-				}
-			}
-			if (!best) best = fallback;
-			if (!best) return 0;
-			const tileW = Math.max(1, Math.round(best.tileW));
-			const tileH = Math.max(1, Math.round(best.tileH));
-			const usedWidth = tileW * best.cols + gap * Math.max(0, best.cols - 1);
-			container.style.gridTemplateColumns = `repeat(${best.cols}, ${tileW}px)`;
-			container.style.gridAutoRows = `${tileH}px`;
-			container.style.gridAutoFlow = "row";
-			container.style.gridTemplateRows = "";
-			container.style.height = "auto";
-			container.style.minHeight = "0";
-			container.style.width = `${Math.min(widthLimit, usedWidth)}px`;
-			container.style.maxWidth = `${widthLimit}px`;
-			container.style.margin = "0 auto";
-			tiles.forEach((tile) => {
-				tile.style.gridColumn = "span 1";
-				tile.style.gridRow = "span 1";
-				tile.style.gridColumnStart = "";
-				tile.style.gridRowStart = "";
-				tile.style.zIndex = "3";
-			});
-			return best.rows * tileH + (best.rows > 1 ? (best.rows - 1) * gap : 0);
-}
-
-function layoutRegularSection(
-	container,
-	tiles,
-	availableWidth,
-	availableHeight,
-=======
-		focusedIds.clear();
-	} catch {}
-	try {
 		if (save) saveList();
 	} catch {}
 	updateEmptyState();
 }
 
-function layoutHeroSection(
-	container,
-	tiles,
-	availableWidth,
->>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
-	gap,
-	aspectW,
-	aspectH
-) {
-<<<<<<< HEAD
-	if (!container) return 0;
-	const count = tiles.length;
-	if (count === 0) {
-		container.style.gridTemplateColumns = "1fr";
-		container.style.gridAutoRows = "1fr";
-		container.style.gridAutoFlow = "row";
-		container.style.gridTemplateRows = "";
-		return 0;
-	}
-=======
-	if (!container || tiles.length === 0) return 0;
->>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
-	const width = Math.max(
-		availableWidth,
-		container.clientWidth,
-		document.documentElement.clientWidth - 12
-	);
-<<<<<<< HEAD
-	const minScale = MIN_REGULAR_TILE_HEIGHT / aspectH;
-	let best = null;
-	let fallback = null;
-	const maxCols = Math.max(1, Math.min(count, 8));
-	for (let cols = 1; cols <= maxCols; cols++) {
-		const totalGapW = gap * (cols - 1);
-		const cellW = (width - totalGapW) / cols;
-		if (cellW <= 0) continue;
-		const rows = Math.max(1, Math.ceil(count / cols));
-		const totalGapH = gap * (rows - 1);
-		let cellH = Infinity;
-		if (availableHeight > 0) {
-			const raw = (availableHeight - totalGapH) / rows;
-			if (isFinite(raw) && raw > 0) cellH = raw;
-		}
-		const widthScale = cellW / aspectW;
-		if (widthScale <= 0) continue;
-		const heightScale = cellH === Infinity ? Infinity : cellH / aspectH;
-		let allowedScale = Math.min(widthScale, heightScale);
-		if (!Number.isFinite(allowedScale) || allowedScale <= 0)
-			allowedScale = widthScale;
-		if (widthScale >= minScale) {
-			let effectiveScale = Math.max(allowedScale, minScale);
-			effectiveScale = Math.min(effectiveScale, widthScale);
-			const candidate = {
-				cols,
-				effectiveScale,
-				rows,
-				widthScale,
-			};
-			if (
-				!best ||
-				effectiveScale > best.effectiveScale ||
-				(effectiveScale === best.effectiveScale && cols < best.cols)
-			) {
-				best = candidate;
-			}
-		} else {
-			const candidate = {
-				cols,
-				effectiveScale: widthScale,
-				rows,
-				widthScale,
-			};
-			if (
-				!fallback ||
-				widthScale > fallback.effectiveScale ||
-				(widthScale === fallback.effectiveScale && cols < fallback.cols)
-			) {
-				fallback = candidate;
-			}
-		}
-	}
-	if (!best) best = fallback;
-	if (!best) {
-		container.style.gridTemplateColumns = "1fr";
-		container.style.gridAutoRows = `${Math.max(1, MIN_REGULAR_TILE_HEIGHT)}px`;
-		container.style.gridAutoFlow = "row";
-		container.style.gridTemplateRows = "";
-		return MIN_REGULAR_TILE_HEIGHT;
-	}
-	const scale = Math.max(best.effectiveScale, minScale);
-	const tileW = Math.max(1, Math.round(aspectW * Math.min(scale, best.widthScale)));
-	const tileH = Math.max(1, Math.round(aspectH * Math.min(scale, best.widthScale)));
-=======
-	const maxCols = Math.min(
-		tiles.length,
-		Math.max(1, Math.floor(width / 260)),
-		6
-	);
-	let best = null;
-	const upperBound = Math.max(1, Math.min(tiles.length, maxCols));
-	for (let cols = 1; cols <= upperBound; cols++) {
-		const totalGap = gap * (cols - 1);
-		const tileW = (width - totalGap) / cols;
-		if (tileW <= 0) continue;
-		const tileH = (tileW * aspectH) / aspectW;
-		const rows = Math.max(1, Math.ceil(tiles.length / cols));
-		const score = tileW * tileH - rows * 0.01;
-		if (!best || score > best.score) {
-			best = { cols, tileW, tileH, rows, score };
-		}
-	}
-	if (!best) return 0;
-	container.style.gridTemplateColumns = `repeat(${best.cols}, ${best.tileW}px)`;
-	container.style.gridAutoRows = `${best.tileH}px`;
-	container.style.gridAutoFlow = "row";
-	container.style.gridTemplateRows = "";
-	container.style.height = "auto";
-	container.style.minHeight = "0";
-	tiles.forEach((tile) => {
-		tile.style.gridColumn = "span 1";
-		tile.style.gridRow = "span 1";
-		tile.style.gridColumnStart = "";
-		tile.style.gridRowStart = "";
-		tile.style.zIndex = "3";
-	});
-	return best.rows * best.tileH + (best.rows > 1 ? (best.rows - 1) * gap : 0);
-}
-
-function layoutRegularSection(
-	container,
-	tiles,
-	availableWidth,
-	availableHeight,
-	gap,
-	aspectW,
-	aspectH
-) {
-	if (!container) return;
-	const count = tiles.length;
-	if (count === 0) {
-		container.style.gridTemplateColumns = "1fr";
-		container.style.gridAutoRows = "1fr";
-		container.style.gridAutoFlow = "row";
-		container.style.gridTemplateRows = "";
-		return;
-	}
-	const width = Math.max(
-		availableWidth,
-		container.clientWidth,
-		document.documentElement.clientWidth - 12
-	);
-	let best = { cols: 1, scale: 0 };
-	const maxCols = Math.max(1, Math.min(count, 8));
-	for (let cols = 1; cols <= maxCols; cols++) {
-		const totalGapW = gap * (cols - 1);
-		const cellW = (width - totalGapW) / cols;
-		if (cellW <= 0) continue;
-		const rows = Math.max(1, Math.ceil(count / cols));
-		const totalGapH = gap * (rows - 1);
-		let cellH = Infinity;
-		if (availableHeight > 0) {
-			const raw = (availableHeight - totalGapH) / rows;
-			if (isFinite(raw) && raw > 0) cellH = raw;
-		}
-		const widthScale = cellW / aspectW;
-		const heightScale = cellH === Infinity ? widthScale : cellH / aspectH;
-		const scale = Math.min(widthScale, Math.max(heightScale, 0));
-		if (scale > best.scale) best = { cols, scale };
-	}
-	if (!best || best.scale <= 0) {
-		const fallbackCols = Math.max(1, Math.min(count, Math.floor(width / 260)));
-		const totalGapW = gap * (fallbackCols - 1);
-		const cellW = (width - totalGapW) / fallbackCols;
-		best = {
-			cols: fallbackCols,
-			scale: Math.max(cellW / aspectW, 120 / aspectW),
-		};
-	}
-	const tileW = Math.max(1, Math.floor(aspectW * best.scale));
-	const tileH = Math.max(1, Math.floor(aspectH * best.scale));
->>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
-	container.style.gridTemplateColumns = `repeat(${best.cols}, ${tileW}px)`;
-	container.style.gridAutoRows = `${tileH}px`;
-	container.style.gridAutoFlow = "row";
-	container.style.gridTemplateRows = "";
-	tiles.forEach((tile) => {
-		tile.style.gridColumn = "span 1";
-		tile.style.gridRow = "span 1";
-		tile.style.gridColumnStart = "";
-		tile.style.gridRowStart = "";
-		tile.style.zIndex = "1";
-	});
-<<<<<<< HEAD
-	const rows = best.rows || Math.max(1, Math.ceil(count / best.cols));
-	return rows * tileH + (rows > 1 ? (rows - 1) * gap : 0);
-=======
->>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
-}
-
-// Fit-all layout with separate hero container
+// Fit-all layout
 function layoutGrid() {
-	if (!grid) return;
-	const tiles = getAllTiles();
-	const totalTiles = tiles.length;
-	const aspectW = 16;
-	const aspectH = 9;
-	const gap =
-		parseFloat(getComputedStyle(grid).getPropertyValue("--gap")) || 10;
-	const wrap = grid.parentElement;
-	const wrapStyles = wrap ? getComputedStyle(wrap) : null;
-	const wrapGap = wrapStyles ? parseFloat(wrapStyles.gap) || 0 : 0;
-	const paddingX = wrapStyles
-		? (parseFloat(wrapStyles.paddingLeft) || 0) +
-		  (parseFloat(wrapStyles.paddingRight) || 0)
-		: 12;
-	const paddingY = wrapStyles
-		? (parseFloat(wrapStyles.paddingTop) || 0) +
-		  (parseFloat(wrapStyles.paddingBottom) || 0)
-		: 12;
-	const viewportW = document.documentElement.clientWidth;
-	const viewportH = window.innerHeight;
-	const toolbarRect = toolbar.getBoundingClientRect();
-	const hasAnyTiles = totalTiles > 0;
-	const gapAfterToolbar = hasAnyTiles ? wrapGap : 0;
-	const availableWidth = Math.max(
-		grid.clientWidth,
-		heroGrid?.clientWidth || 0,
-		(wrap ? wrap.clientWidth : viewportW) - paddingX,
-		viewportW - paddingX
+	const tiles = [...grid.children].filter((el) =>
+		el.classList.contains("tile")
 	);
-	const totalHeightBudget = Math.max(
-		0,
-		viewportH - paddingY - toolbarRect.height - gapAfterToolbar
-	);
-	const focusedTiles = [];
-	const regularTiles = [];
-	const heroContainer = heroGrid;
-	tiles.forEach((tile) => {
-		if (!tile || !tile.classList || !tile.classList.contains("tile")) return;
-		let id = "";
-		try {
-			id = tile.dataset.instanceId || getRecByTile(tile)?.instanceId || "";
-		} catch {}
-		const isFocused = heroContainer && id && focusedIds.has(id);
-		tile.classList.toggle("focused", !!isFocused);
-		if (isFocused) focusedTiles.push(tile);
-		else regularTiles.push(tile);
-	});
-
-	if (!heroContainer) {
-		regularTiles.push(...focusedTiles);
-		focusedTiles.length = 0;
-	}
-	if (heroContainer) {
-		focusedTiles.forEach((tile) => {
-			if (tile.parentNode !== heroContainer) heroContainer.appendChild(tile);
-		});
-		regularTiles.forEach((tile) => {
-			if (tile.parentNode === heroContainer && grid) grid.appendChild(tile);
-		});
-	}
-	regularTiles.forEach((tile) => {
-		if (tile.parentNode !== grid) grid.appendChild(tile);
-	});
-
-	let heroHeight = 0;
-	if (heroContainer) {
-		heroContainer.hidden = focusedTiles.length === 0;
-		if (focusedTiles.length > 0) {
-			heroContainer.hidden = false;
-			heroHeight = layoutHeroSection(
-				heroContainer,
-				focusedTiles,
-				availableWidth,
-				gap,
-				aspectW,
-				aspectH
-			);
-		} else {
-			heroContainer.style.gridTemplateColumns = "";
-			heroContainer.style.gridAutoRows = "";
-			heroContainer.style.gridAutoFlow = "";
-			heroContainer.style.gridTemplateRows = "";
-		}
-	}
-	const gapBetweenStacks =
-		focusedTiles.length > 0 && regularTiles.length > 0 ? wrapGap : 0;
-	const availableForRegular = Math.max(
-		0,
-		totalHeightBudget - heroHeight - gapBetweenStacks
-	);
-	layoutRegularSection(
-		grid,
-		regularTiles,
-		availableWidth,
-		availableForRegular,
-		gap,
-		aspectW,
-		aspectH
-	);
-
-	if (totalTiles === 0) {
+	const n = tiles.length;
+	if (n === 0) {
 		grid.style.gridTemplateColumns = "1fr";
 		grid.style.gridAutoRows = "1fr";
-		grid.style.gridAutoFlow = "row";
-		grid.style.gridTemplateRows = "";
+		return;
 	}
-	updateEmptyState();
+	const gap =
+		parseFloat(getComputedStyle(grid).getPropertyValue("--gap")) || 10;
+	const vw = document.documentElement.clientWidth,
+		vh = window.innerHeight;
+	const toolbarRect = toolbar.getBoundingClientRect();
+	const availableW = vw - 2 * 6;
+	const availableH = vh - toolbarRect.height - 2 * 6;
+	const aspectW = 16,
+		aspectH = 9;
+	let bestCols = 1,
+		bestScale = 0;
+	for (let cols = 1; cols <= n; cols++) {
+		const rows = Math.ceil(n / cols);
+		const totalGapW = gap * (cols - 1),
+			totalGapH = gap * (rows - 1);
+		const cellW = (availableW - totalGapW) / cols,
+			cellH = (availableH - totalGapH) / rows;
+		if (cellW <= 0 || cellH <= 0) continue;
+		const scale = Math.min(cellW / aspectW, cellH / aspectH);
+		if (scale > bestScale) {
+			bestScale = scale;
+			bestCols = cols;
+		}
+	}
+	const tileW = Math.floor(aspectW * bestScale),
+		tileH = Math.floor(aspectH * bestScale);
+	grid.style.gridTemplateColumns = `repeat(${bestCols}, ${tileW}px)`;
+	grid.style.gridAutoRows = `${tileH}px`;
 }
 
 const ro = new ResizeObserver(() => layoutGrid());
 ro.observe(document.documentElement);
 ro.observe(grid);
-if (heroGrid) ro.observe(heroGrid);
 ro.observe(toolbar);
 window.addEventListener("orientationchange", () => setTimeout(layoutGrid, 50));
 window.addEventListener("resize", () => layoutGrid());
@@ -3509,14 +3060,17 @@ function getRecByTile(tile) {
 			fn();
 		}
 	};
-	// Indicate we accept link drops when appropriate (prefer showing only for .m3u8)
+	// Indicate we accept link drops when appropriate
 	window.addEventListener("dragenter", (e) => {
 		try {
 			if (document.querySelector(".tile.dragging")) return;
-			const dt = e.dataTransfer;
-			if (!dt) return;
-			const urls = extractUrls(dt);
-			if (urls && urls.length) {
+			const types = (e.dataTransfer && e.dataTransfer.types) || [];
+			const hasUrl = Array.from(types).some(
+				(t) =>
+					(t + "").toLowerCase().includes("uri") ||
+					(t + "").toLowerCase().includes("text")
+			);
+			if (hasUrl) {
 				_dragDepth++;
 				showDropOverlay();
 			}
@@ -3526,17 +3080,21 @@ function getRecByTile(tile) {
 		try {
 			// If a tile is being dragged for reordering, let that flow handle events
 			if (document.querySelector(".tile.dragging")) return;
-			const dt = e.dataTransfer;
-			if (!dt) return;
-			const txt = (dt.getData("text/plain") || "").trim();
-			if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
-				return;
-			const urls = extractUrls(dt);
-			if (urls && urls.length) {
+			const types = (e.dataTransfer && e.dataTransfer.types) || [];
+			const hasUrl = Array.from(types).some(
+				(t) =>
+					(t + "").toLowerCase().includes("uri") ||
+					(t + "").toLowerCase().includes("text")
+			);
+			if (hasUrl) {
+				// If the payload is a tile instanceId, don't treat it as a URL drop
+				const txt =
+					(e.dataTransfer && (e.dataTransfer.getData("text/plain") || "")) ||
+					"";
+				if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
+					return;
 				showDropOverlay();
-				e.preventDefault(); // only allow drop for valid .m3u8 URLs
-			} else {
-				hideDropOverlay();
+				e.preventDefault(); // allow drop
 			}
 		} catch {}
 	});
@@ -3556,19 +3114,11 @@ function getRecByTile(tile) {
 			if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
 				return; // reordering payload
 			const urls = extractUrls(dt);
-			// Always prevent default navigation and hide overlay on drop
+			if (!urls.length) return;
 			e.preventDefault();
 			e.stopPropagation();
 			hideDropOverlay();
-			_dragDepth = 0;
-			if (!urls || !urls.length) return; // Non-stream URL: no-op
 			ensureCustomThen(() => addUrls(urls));
-		} catch {}
-	});
-	// Fallback to ensure overlay disappears even if we miss some events
-	window.addEventListener("dragend", () => {
-		try {
-			hideDropOverlay();
 		} catch {}
 	});
 })();
