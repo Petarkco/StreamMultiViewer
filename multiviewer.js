@@ -2918,9 +2918,12 @@ function layoutGrid() {
 			for (let heroCols = 1; heroCols <= Math.min(f, totalCols); heroCols++) {
 				let heroSpan = Math.floor(totalCols / heroCols);
 				if (heroSpan < 1) heroSpan = 1;
+				if (heroSpan === 1 && totalCols > heroCols)
+					heroSpan = Math.min(2, totalCols);
 				const heroWidth = heroSpan * colW + (heroSpan - 1) * gap;
 				const heroHeight = (heroWidth * aspectH) / aspectW;
 				let heroRowSpan = Math.max(1, Math.round(heroHeight / rowH));
+				if (heroSpan > 1 && heroRowSpan < 2) heroRowSpan = 2;
 				const heroRows = Math.ceil(f / heroCols);
 				const heightHeroes =
 					heroRows * (heroRowSpan * rowH) + (heroRows - 1) * gap;
