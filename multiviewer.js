@@ -2897,99 +2897,95 @@ function layoutGrid() {
 	const aspectW = 16,
 		aspectH = 9;
 
-	// Spotlight: when one or more tiles are focused, stack each focused tile as a full-width
-	// 16:9 row at the top, and place all non-focused tiles below in a compact, centered grid.
+	// Spotlight: allow focused tiles to shrink horizontally (multi-column heroes) so that
+	// every stream remains visible. Focused tiles appear first (CSS order), forming one or
+	// more columns at the top; the rest fill rows beneath.
 	const focusedTiles = tiles.filter((t) => t.classList.contains("focused"));
 	if (focusedTiles.length >= 1) {
 		const others = tiles.filter((t) => !t.classList.contains("focused"));
 		const f = focusedTiles.length;
 		const m = others.length;
-		// Height for each full-width hero row
-		const heroH = Math.floor((availableW * aspectH) / aspectW);
 
-		if (m === 0) {
-			// Only focused tiles: stack full-width heroes and scale to fit vertically
-			const maxHeroH = Math.max(
-				1,
-				Math.floor((availableH - (f - 1) * gap) / Math.max(1, f))
-			);
-			const heroHFit = Math.max(1, Math.min(heroH, maxHeroH));
-			grid.style.gridTemplateColumns = `repeat(1, ${availableW}px)`;
-			grid.style.gridAutoRows = `${heroHFit}px`;
-			grid.style.gridAutoFlow = "row"; // prevent back-fill above heroes
-			tiles.forEach((t) => {
-				if (t.classList.contains("focused")) {
-					t.style.gridColumn = `1 / -1`;
-					t.style.gridRow = `span 1`;
-				} else {
-					t.style.gridColumn = `span 1`;
-					t.style.gridRow = `span 1`;
-				}
-			});
-			return;
-		}
-
-		// Space remaining for the small grid (rows of non-focused tiles)
-		const heroesTotalH = f * heroH + (f - 1) * gap;
-		const remainingH = Math.max(0, availableH - heroesTotalH - gap);
-
-		// Choose small-grid columns to maximize tile size in the remaining area
-		let bestColsSmall = Math.max(1, Math.min(m, 6));
-		let bestScaleSmall = 0;
-		if (remainingH > 0) {
-			for (let cols = 1; cols <= Math.min(m, 8); cols++) {
-				const rows = Math.ceil(m / cols);
-				const totalGapW = gap * (cols - 1);
-				const totalGapH = gap * (rows - 1);
-				const cellW = (availableW - totalGapW) / cols;
-				const cellH = (remainingH - totalGapH) / rows;
-				if (cellW <= 0 || cellH <= 0) continue;
-				const scale = Math.min(cellW / aspectW, cellH / aspectH);
-				if (scale > bestScaleSmall) {
-					bestScaleSmall = scale;
-					bestColsSmall = cols;
+		let best = null; // { totalCols, heroCols, colW, rowH, heroSpan, heroRowSpan, score }
+		const maxTotalCols = Math.min(
+			8,
+			Math.max(1, f + Math.max(1, Math.min(m, 6)))
+		);
+		for (let totalCols = 1; totalCols <= maxTotalCols; totalCols++) {
+			const colW = (availableW - gap * (totalCols - 1)) / totalCols;
+			if (colW <= 0) continue;
+			const rowH = (colW * aspectH) / aspectW;
+			for (let heroCols = 1; heroCols <= Math.min(f, totalCols); heroCols++) {
+				let heroSpan = Math.floor(totalCols / heroCols);
+				if (heroSpan < 1) heroSpan = 1;
+				const heroWidth = heroSpan * colW + (heroSpan - 1) * gap;
+				const heroHeight = (heroWidth * aspectH) / aspectW;
+				let heroRowSpan = Math.max(1, Math.round(heroHeight / rowH));
+				const heroRows = Math.ceil(f / heroCols);
+				const heightHeroes =
+					heroRows * (heroRowSpan * rowH) + (heroRows - 1) * gap;
+				const smallCols = totalCols; // same column template for all rows
+				const smallRows = m > 0 ? Math.ceil(m / smallCols) : 0;
+				const heightSmall =
+					smallRows * rowH + (smallRows > 0 ? (smallRows - 1) * gap : 0);
+				const totalHeight =
+					heightHeroes + (m > 0 && f > 0 ? gap : 0) + heightSmall;
+				const overflow = totalHeight - availableH;
+				// Prefer fits (no overflow) with larger rowH; otherwise minimal overflow, then larger rowH
+				const score =
+					(overflow <= 0 ? 1 : 0) * 1e9 - Math.max(0, overflow) * 1e6 + rowH;
+				if (!best || score > best.score) {
+					best = {
+						totalCols,
+						heroCols,
+						colW,
+						rowH,
+						heroSpan,
+						heroRowSpan,
+						score,
+						heroRows,
+						smallRows,
+						overflow,
+					};
 				}
 			}
 		}
-		const tileWSmall = Math.floor(
-			bestScaleSmall > 0
-				? aspectW * bestScaleSmall
-				: (availableW - gap * (bestColsSmall - 1)) / Math.max(1, bestColsSmall)
-		);
-		const tileHSmall = Math.max(
-			1,
-			Math.floor((tileWSmall * aspectH) / aspectW)
-		);
+		if (!best) return; // should not happen
 
-		// Fixed-px columns for small grid keep 16:9 and allow centering via justify-content
-		grid.style.gridTemplateColumns = `repeat(${Math.max(
-			1,
-			bestColsSmall
-		)}, ${tileWSmall}px)`;
-		grid.style.gridAutoRows = `${tileHSmall}px`;
-		grid.style.gridAutoFlow = "row"; // ensure others are strictly below heroes
+		const { totalCols, colW, rowH, heroCols, heroSpan } = best;
+		let { heroRowSpan } = best;
+		if (best.overflow > 0 && heroRowSpan > 1) {
+			// Try to shrink heroes vertically to eliminate overflow
+			const heroRows = Math.ceil(f / heroCols);
+			const smallRows = m > 0 ? Math.ceil(m / totalCols) : 0;
+			const usedSmall =
+				smallRows * rowH + (smallRows > 0 ? (smallRows - 1) * gap : 0);
+			const budget =
+				availableH - usedSmall - (heroRows - 1) * gap - (m > 0 ? gap : 0);
+			const maxSpanPerHero = Math.max(
+				1,
+				Math.floor(budget / Math.max(1, heroRows * rowH))
+			);
+			heroRowSpan = Math.max(1, Math.min(heroRowSpan, maxSpanPerHero));
+		}
 
-		// Compute total height used by the small grid to determine remaining height for heroes
-		const rowsSmall = Math.ceil(m / Math.max(1, bestColsSmall));
-		const totalSmallH =
-			rowsSmall > 0 ? rowsSmall * tileHSmall + (rowsSmall - 1) * gap : 0;
-		const availableForHeroes = Math.max(
-			0,
-			availableH - totalSmallH - (f - 1) * gap - gap
-		);
-		const heroHFit = Math.max(
-			1,
-			Math.floor(Math.min(heroH, availableForHeroes / Math.max(1, f)))
-		);
-		// Focused rows span enough small rows to reach the fitted hero height
-		const focusedRowSpan = Math.max(1, Math.round(heroHFit / tileHSmall));
+		const tileWpx = Math.floor(colW);
+		const tileHpx = Math.max(1, Math.floor(rowH));
+		grid.style.gridTemplateColumns = `repeat(${totalCols}, ${tileWpx}px)`;
+		grid.style.gridAutoRows = `${tileHpx}px`;
+		grid.style.gridAutoFlow = "row"; // keep others below heroes
+
+		// Apply spans per tile
+		let heroPlaced = 0;
 		tiles.forEach((t) => {
 			if (t.classList.contains("focused")) {
-				t.style.gridColumn = `1 / -1`;
-				t.style.gridRow = `span ${focusedRowSpan}`;
+				// span heroSpan columns and heroRowSpan rows
+				t.style.gridColumn = `span ${heroSpan}`;
+				t.style.gridRow = `span ${heroRowSpan}`;
+				heroPlaced++;
 			} else {
-				t.style.gridColumn = `span 1`;
-				t.style.gridRow = `span 1`;
+				t.style.gridColumn = "span 1";
+				t.style.gridRow = "span 1";
 			}
 		});
 		return;
