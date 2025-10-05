@@ -31,8 +31,31 @@ body {
 	height: 100vh;
 	padding: 6px;
 	display: grid;
-	grid-template-rows: auto 1fr;
+	grid-template-rows: auto auto 1fr;
 	gap: 6px;
+}
+
+.wrap > .toolbar {
+	grid-row: 1;
+}
+
+#heroGrid {
+	grid-row: 2;
+	min-height: 0;
+}
+
+#grid {
+	grid-row: 3;
+	min-height: 0;
+}
+
+.grid.hero-grid {
+	height: auto;
+	min-height: 0;
+}
+
+#heroGrid[hidden] {
+	display: none !important;
 }
 
 .toolbar {
@@ -197,8 +220,17 @@ button:active {
 	height: 100%;
 	display: grid;
 	gap: var(--gap);
-	align-content: start;
+	align-content: start; /* keep top-aligned vertically */
+	justify-content: center; /* center tiles horizontally when there is extra space */
 	overflow: hidden;
+}
+
+/* Prefer focused tiles earlier in packing without reordering DOM */
+.grid .tile {
+	order: 2;
+}
+.grid .tile.focused {
+	order: 1;
 }
 
 .tile {
@@ -212,6 +244,13 @@ button:active {
 	justify-content: center;
 	isolation: isolate;
 	overflow: hidden;
+}
+
+/* Visual emphasis for focused tiles */
+.tile.focused {
+	border-color: #2b79ff;
+	box-shadow: 0 0 0 1px rgba(43, 121, 255, 0.35) inset,
+		0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
 /* Drag and drop visuals */
