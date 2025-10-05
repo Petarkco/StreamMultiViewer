@@ -1123,17 +1123,17 @@ function addStreamTile(url, passedInstanceId, labelText) {
 function setupPlayer(rec) {
 	// setupPlayer called
 	const { video, url } = rec;
-	// preserve current playback position so rebuilds/reconnects don't jump to live
-	try {
-		const cur =
-			video && typeof video.currentTime === "number" ? video.currentTime : 0;
-		rec._preservePosition = cur && cur > 0.5 ? cur : null;
-	} catch (e) {
+	// Preserve current playback position so rebuilds/reconnects don't jump to live
+	rec._preservePosition =
+		video && typeof video.currentTime === "number" && video.currentTime > 0.5
+			? video.currentTime
+			: null;
+	if (rec._preservePosition && rec._preservePosition <= 0.5) {
 		rec._preservePosition = null;
 	}
 	if (rec.hls) {
 		try {
-			rec.hls.destroy();
+			if (rec.hls) rec.hls.destroy();
 		} catch {}
 		rec.hls = null;
 	}
@@ -1153,13 +1153,31 @@ function setupPlayer(rec) {
 		}
 	};
 
+	// Build candidate URLs: try the base .m3u8 first (strip anything after .m3u8), then fall back to the full URL
+	const deriveBaseM3U8 = (u) => {
+		try {
+			const s = String(u || "");
+			const idx = s.toLowerCase().indexOf(".m3u8");
+			if (idx === -1) return s;
+			return s.slice(0, idx + ".m3u8".length);
+		} catch {
+			return u;
+		}
+	};
+	const _baseCandidate = deriveBaseM3U8(url);
+	const _firstTry =
+		_baseCandidate && _baseCandidate !== url ? _baseCandidate : url;
+	const _secondTry = _baseCandidate && _baseCandidate !== url ? url : null;
+	// Reset and track the active URL actually used for playback
+	rec._activeUrl = null;
+
 	if (window.Hls && Hls.isSupported()) {
 		// using hls.js for this url
 		// Do a quick preflight to detect 404/CORS/bogus responses before creating Hls
 		try {
 			if (rec._showSpinner) rec._showSpinner();
 		} catch {}
-		preflightManifest(url, 5000)
+		preflightManifest(_firstTry, 5000)
 			.then((pf) => {
 				if (!pf || !pf.ok) {
 					// show actionable error on tile instead of creating Hls
@@ -1235,19 +1253,14 @@ function setupPlayer(rec) {
 								dt: dt,
 								type: fragType,
 							});
-							if (rec._netActivity.length > 256) rec._netActivity.shift();
 						} catch (e) {}
 					} catch (e) {}
 				});
-				hls.on(Hls.Events.ERROR, (_, d) =>
-					pushDebug(`ERROR ${d && d.type} ${d && d.details}`)
-				);
-				hls.on(Hls.Events.MANIFEST_PARSED, () => pushDebug("MANIFEST_PARSED"));
 				hls.attachMedia(video);
 				// continue wiring events below in the same block
 				hls.on(Hls.Events.MEDIA_ATTACHED, () => {
 					try {
-						hls.loadSource(url);
+						hls.loadSource(rec._activeUrl || url);
 						// If we preserved a playback position, start loading from that position
 						if (
 							typeof rec._preservePosition === "number" &&
@@ -1266,7 +1279,7 @@ function setupPlayer(rec) {
 					} catch (e) {
 						// Ensure source is loaded even if startLoad fails
 						try {
-							hls.loadSource(url);
+							hls.loadSource(rec._activeUrl || url);
 						} catch (_) {}
 					}
 				});
@@ -1423,10 +1436,51 @@ function setupPlayer(rec) {
 				});
 			})
 			.catch((e) => {
-				showTileError(rec, "Manifest preflight failed");
+				// If first preflight failed and we have a second candidate, try it
+				if (_secondTry) {
+					preflightManifest(_secondTry, 5000)
+						.then((pf2) => {
+							if (pf2 && pf2.ok) {
+								rec._activeUrl = _secondTry;
+								// Re-run setup to attach using the second URL
+								try {
+									setupPlayer(rec);
+								} catch {}
+								return;
+							}
+							showTileError(rec, "Manifest preflight failed");
+						})
+						.catch(() => showTileError(rec, "Manifest preflight failed"));
+				} else {
+					showTileError(rec, "Manifest preflight failed");
+				}
 			});
 	} else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-		video.src = url;
+		// For native playback, choose candidate similarly
+		const nativeTry = (_active) => {
+			video.src = _active;
+		};
+		preflightManifest(_firstTry, 5000)
+			.then((pf) => {
+				if (pf && pf.ok) {
+					rec._activeUrl = _firstTry;
+					nativeTry(_firstTry);
+					return;
+				}
+				if (_secondTry) {
+					return preflightManifest(_secondTry, 5000).then((pf2) => {
+						if (pf2 && pf2.ok) {
+							rec._activeUrl = _secondTry;
+							nativeTry(_secondTry);
+						} else {
+							showTileError(rec, "Manifest preflight failed");
+						}
+					});
+				} else {
+					showTileError(rec, "Manifest preflight failed");
+				}
+			})
+			.catch(() => showTileError(rec, "Manifest preflight failed"));
 		video.addEventListener(
 			"loadedmetadata",
 			() => {
@@ -2264,10 +2318,10 @@ function hardRefresh(rec) {
 			rec.hls.stopLoad();
 			rec.hls.detachMedia();
 			rec.hls.attachMedia(rec.video);
-			rec.hls.loadSource(rec.url);
+			rec.hls.loadSource(rec._activeUrl || rec.url);
 		} else {
 			rec.video.pause();
-			const u = new URL(rec.url, window.location.href);
+			const u = new URL(rec._activeUrl || rec.url, window.location.href);
 			u.searchParams.set("_ts", Date.now().toString());
 			rec.video.src = "";
 			rec.video.load();
