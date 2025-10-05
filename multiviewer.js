@@ -2997,14 +2997,30 @@ function layoutGrid() {
 		}
 		if (!best) return;
 
-		const { totalCols, colW, rowH, heroCols, heroRowSpan, heroRows, spans } =
-			best;
+		const {
+			totalCols,
+			colW,
+			rowH,
+			heroCols,
+			heroRowSpan,
+			heroRows,
+			spans,
+			smallRows,
+		} = best;
 
 		const tileWpx = Math.max(1, colW);
 		const tileHpx = Math.max(1, rowH);
 		grid.style.gridTemplateColumns = `repeat(${totalCols}, ${tileWpx}px)`;
 		grid.style.gridAutoRows = `${tileHpx}px`;
 		grid.style.gridAutoFlow = "row";
+		const heroRowCount = heroRows * heroRowSpan;
+		const otherRowCount = smallRows || 0;
+		const templateParts = [];
+		if (heroRowCount > 0)
+			templateParts.push(`repeat(${heroRowCount}, ${tileHpx}px)`);
+		if (otherRowCount > 0)
+			templateParts.push(`repeat(${otherRowCount}, ${tileHpx}px)`);
+		grid.style.gridTemplateRows = templateParts.join(" ");
 
 		const heroOffsets = [];
 		let accCols = 0;
@@ -3036,11 +3052,12 @@ function layoutGrid() {
 			t.style.gridRow = `${rowStart} / span ${heroRowSpan}`;
 			t.style.gridColumnStart = `${colStart}`;
 			t.style.gridRowStart = `${rowStart}`;
+			t.style.zIndex = "3";
 			for (let r = 0; r < heroRowSpan; r++)
 				markRange(rowStart + r, colStart, span);
 			heroPlaced++;
 		});
-		const firstOtherRow = heroRows * heroRowSpan + 1;
+		const firstOtherRow = heroRowCount + 1;
 		const placeOther = (tile) => {
 			let row = firstOtherRow;
 			for (;;) {
@@ -3053,6 +3070,7 @@ function layoutGrid() {
 						tile.style.gridColumnStart = `${col}`;
 						tile.style.gridRowStart = `${row}`;
 						markRange(row, col, 1);
+						tile.style.zIndex = "1";
 						placed = true;
 						break;
 					}
@@ -3096,6 +3114,7 @@ function layoutGrid() {
 	grid.style.gridTemplateColumns = `repeat(${bestCols}, ${tileW}px)`;
 	grid.style.gridAutoRows = `${tileH}px`;
 	grid.style.gridAutoFlow = "dense"; // pack gaps tightly when focused tiles span multiple cells
+	grid.style.gridTemplateRows = "";
 
 	// Apply per-tile spans based on focus state
 	const focusedSpanW = Math.min(2, bestCols);
