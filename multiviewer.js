@@ -394,12 +394,28 @@ function addStreamTile(url, passedInstanceId, labelText) {
 	tile.className = "tile";
 	tile.tabIndex = 0;
 	const isCustomMode = feedSelector && feedSelector.value === "custom";
-	tile.setAttribute("draggable", isCustomMode ? "true" : "false");
+	// Disable dragging if fullscreen is active to prevent inadvertent reorders
+	const allowDrag = isCustomMode && !(() => {
+		try {
+			return !!document.fullscreenElement;
+		} catch {
+			return false;
+		}
+	})();
+	tile.setAttribute("draggable", allowDrag ? "true" : "false");
 	tile.dataset.instanceId = passedInstanceId || "";
 
 	// Drag-and-drop reordering logic (Custom mode only)
 	if (isCustomMode) {
 		tile.addEventListener("dragstart", (e) => {
+			// Block drag-start while fullscreen is active
+			try {
+				if (document.fullscreenElement) {
+					e.preventDefault();
+					e.stopPropagation();
+					return;
+				}
+			} catch {}
 			tile.classList.add("dragging");
 			if (e.dataTransfer) {
 				e.dataTransfer.effectAllowed = "move";
@@ -413,6 +429,10 @@ function addStreamTile(url, passedInstanceId, labelText) {
 				.forEach((t) => t.classList.remove("drop-target"));
 		});
 		tile.addEventListener("dragover", (e) => {
+			// Prevent reordering while fullscreen
+			try {
+				if (document.fullscreenElement) return;
+			} catch {}
 			e.preventDefault();
 			if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
 			tile.classList.add("drop-target");
@@ -421,6 +441,10 @@ function addStreamTile(url, passedInstanceId, labelText) {
 			tile.classList.remove("drop-target");
 		});
 		tile.addEventListener("drop", (e) => {
+			// Prevent reordering while fullscreen
+			try {
+				if (document.fullscreenElement) return;
+			} catch {}
 			e.preventDefault();
 			tile.classList.remove("drop-target");
 			const fromId = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
@@ -433,6 +457,10 @@ function addStreamTile(url, passedInstanceId, labelText) {
 	function reorderTiles(fromId, toId) {
 		// Only reorder in Custom mode
 		if (!(feedSelector && feedSelector.value === "custom")) return;
+		// Guard against reorders while fullscreen is active
+		try {
+			if (document.fullscreenElement) return;
+		} catch {}
 		const fromIdx = streamEntries.findIndex((e) => e.instanceId === fromId);
 		const toIdx = streamEntries.findIndex((e) => e.instanceId === toId);
 		if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
@@ -2943,6 +2971,22 @@ ro.observe(grid);
 ro.observe(toolbar);
 window.addEventListener("orientationchange", () => setTimeout(layoutGrid, 50));
 window.addEventListener("resize", () => layoutGrid());
+
+// Disable tile dragging while any element is fullscreen
+const syncDraggableForFullscreen = () => {
+	try {
+		const isFs = !!document.fullscreenElement;
+		const isCustom = feedSelector && feedSelector.value === "custom";
+		const allow = isCustom && !isFs;
+		grid.querySelectorAll(".tile").forEach((t) => {
+			try {
+				t.setAttribute("draggable", allow ? "true" : "false");
+				if (!allow) t.classList.remove("dragging", "drop-target");
+			} catch {}
+		});
+	} catch {}
+};
+document.addEventListener("fullscreenchange", syncDraggableForFullscreen);
 
 function getRecByTile(tile) {
 	for (const [, rec] of players.entries()) if (rec.tile === tile) return rec;
