@@ -2969,6 +2969,94 @@ function getRecByTile(tile) {
 	}
 })();
 
+// Global URL drag-and-drop: allow dropping a .m3u8 link anywhere to add it
+// Avoid interfering with tile reordering by ignoring drops while a tile is dragging
+(function setupGlobalDrop() {
+	const isUuid = (s) =>
+		typeof s === "string" &&
+		/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+			s
+		);
+	const extractUrls = (dt) => {
+		try {
+			let text = "";
+			try {
+				text = dt.getData("text/uri-list") || "";
+			} catch {}
+			if (!text) {
+				try {
+					text = dt.getData("text/plain") || "";
+				} catch {}
+			}
+			if (!text) return [];
+			// text/uri-list may contain comments starting with '#'
+			const cleaned = text
+				.split(/\r?\n|\s+/)
+				.map((l) => l.trim())
+				.filter((l) => l && !l.startsWith("#"))
+				.join("\n");
+			const tokens = cleaned.split(/[,\s\n]+/).map((t) => t.trim());
+			const urls = tokens.filter(
+				(t) => /^https?:\/\//i.test(t) && t.toLowerCase().includes(".m3u8")
+			);
+			return Array.from(new Set(urls));
+		} catch {
+			return [];
+		}
+	};
+	const ensureCustomThen = (fn) => {
+		try {
+			if (feedSelector && feedSelector.value !== "custom") {
+				feedSelector.value = "custom";
+				try {
+					feedSelector.dispatchEvent(new Event("change"));
+				} catch {}
+				setTimeout(fn, 50);
+			} else fn();
+		} catch {
+			fn();
+		}
+	};
+	// Indicate we accept link drops when appropriate
+	window.addEventListener("dragover", (e) => {
+		try {
+			// If a tile is being dragged for reordering, let that flow handle events
+			if (document.querySelector(".tile.dragging")) return;
+			const types = (e.dataTransfer && e.dataTransfer.types) || [];
+			const hasUrl = Array.from(types).some(
+				(t) =>
+					(t + "").toLowerCase().includes("uri") ||
+					(t + "").toLowerCase().includes("text")
+			);
+			if (hasUrl) {
+				// If the payload is a tile instanceId, don't treat it as a URL drop
+				const txt =
+					(e.dataTransfer && (e.dataTransfer.getData("text/plain") || "")) ||
+					"";
+				if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
+					return;
+				e.preventDefault(); // allow drop
+			}
+		} catch {}
+	});
+	window.addEventListener("drop", (e) => {
+		try {
+			// If a tile is being dragged for reordering, ignore
+			if (document.querySelector(".tile.dragging")) return;
+			const dt = e.dataTransfer;
+			if (!dt) return;
+			const txt = (dt.getData("text/plain") || "").trim();
+			if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
+				return; // reordering payload
+			const urls = extractUrls(dt);
+			if (!urls.length) return;
+			e.preventDefault();
+			e.stopPropagation();
+			ensureCustomThen(() => addUrls(urls));
+		} catch {}
+	});
+})();
+
 // Post-init: ensure any recs created by presets or saved lists that were
 // marked with subtitleChoice === 'Auto' get a chance to enable subtitles
 // once HLS/native tracks become available. Retry a few times with delays.
