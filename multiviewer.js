@@ -2896,6 +2896,74 @@ function layoutGrid() {
 	const availableH = vh - toolbarRect.height - 2 * 6;
 	const aspectW = 16,
 		aspectH = 9;
+
+	// Single spotlight: make the one focused tile span full width at the top,
+	// with the other tiles arranged underneath in a centered grid.
+	const focusedTiles = tiles.filter((t) => t.classList.contains("focused"));
+	if (focusedTiles.length === 1) {
+		const focusedEl = focusedTiles[0];
+		const others = tiles.filter((t) => t !== focusedEl);
+		const m = others.length;
+		// Desired height for focused tile to keep 16:9 at full width
+		const desiredFocusedH = Math.floor((availableW * aspectH) / aspectW);
+		// Compute small-tile layout using remaining height below the focused tile
+		const remainingH = Math.max(
+			0,
+			availableH - desiredFocusedH - (m > 0 ? gap : 0)
+		);
+		let bestColsSmall = Math.max(1, Math.min(m || 1, 6));
+		let bestScaleSmall = 0;
+		if (m > 0 && remainingH > 0) {
+			for (let cols = 1; cols <= Math.min(m, 8); cols++) {
+				const rows = Math.ceil(m / cols);
+				const totalGapW = gap * (cols - 1);
+				const totalGapH = gap * (rows - 1);
+				const cellW = (availableW - totalGapW) / cols;
+				const cellH = (remainingH - totalGapH) / rows;
+				if (cellW <= 0 || cellH <= 0) continue;
+				const scale = Math.min(cellW / aspectW, cellH / aspectH);
+				if (scale > bestScaleSmall) {
+					bestScaleSmall = scale;
+					bestColsSmall = cols;
+				}
+			}
+		} else {
+			bestColsSmall = Math.max(1, Math.min(m || 1, 6));
+		}
+		const tileWSmall =
+			m > 0 && bestScaleSmall > 0
+				? Math.floor(aspectW * bestScaleSmall)
+				: Math.floor(
+						(availableW - gap * (bestColsSmall - 1)) /
+							Math.max(1, bestColsSmall)
+				  );
+		const tileHSmall = Math.floor((tileWSmall * aspectH) / aspectW);
+
+		// Grid columns fill width so focused span covers full container width
+		grid.style.gridTemplateColumns = `repeat(${Math.max(
+			1,
+			bestColsSmall
+		)}, 1fr)`;
+		grid.style.gridAutoRows = `${Math.max(1, tileHSmall)}px`;
+		grid.style.gridAutoFlow = "dense";
+
+		// Compute row span for the focused tile so its height ≈ 16:9 at full width
+		// Convert desiredFocusedH into a multiple of auto-rows
+		const autoRow = Math.max(1, tileHSmall || desiredFocusedH);
+		const focusedRowSpan = Math.max(1, Math.round(desiredFocusedH / autoRow));
+
+		// Apply spans
+		tiles.forEach((t) => {
+			if (t === focusedEl) {
+				t.style.gridColumn = `1 / -1`; // span all columns
+				t.style.gridRow = `span ${focusedRowSpan}`;
+			} else {
+				t.style.gridColumn = `span 1`;
+				t.style.gridRow = `span 1`;
+			}
+		});
+		return;
+	}
 	let bestCols = 1,
 		bestScale = 0;
 	// compute effective number of cells accounting for focused tiles spanning multiple cells
