@@ -197,7 +197,8 @@ button:active {
 	height: 100%;
 	display: grid;
 	gap: var(--gap);
-	align-content: start;
+	align-content: start; /* keep top-aligned vertically */
+	justify-content: center; /* center tiles horizontally when there is extra space */
 	overflow: hidden;
 }
 
