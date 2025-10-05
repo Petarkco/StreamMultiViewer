@@ -3108,6 +3108,37 @@ function getRecByTile(tile) {
 			return [];
 		}
 	};
+	const looksLikeHttpUrl = (value) => {
+		try {
+			if (!value) return false;
+			return /^https?:\/\//i.test(String(value).trim());
+		} catch {
+			return false;
+		}
+	};
+	const hasLikelyUrlPayload = (dt) => {
+		try {
+			if (!dt) return false;
+			const types = Array.from(dt.types || []);
+			if (!types.length) return false;
+			for (const type of types) {
+				const lower = String(type || "").toLowerCase();
+				if (lower.includes("uri") || lower.includes("url")) return true;
+				if (lower === "text/plain" || lower === "text/html") {
+					try {
+						const txt =
+							dt.getData("text/plain") ||
+							(lower === "text/html" ? dt.getData("text/html") : "");
+						if (looksLikeHttpUrl(txt)) return true;
+					} catch {}
+				}
+				if (lower.includes("text")) return true;
+			}
+			return false;
+		} catch {
+			return false;
+		}
+	};
 	const ensureCustomThen = (fn) => {
 		try {
 			if (feedSelector && feedSelector.value !== "custom") {
@@ -3125,15 +3156,16 @@ function getRecByTile(tile) {
 	window.addEventListener("dragenter", (e) => {
 		try {
 			if (document.querySelector(".tile.dragging")) return;
-			const types = (e.dataTransfer && e.dataTransfer.types) || [];
-			const hasUrl = Array.from(types).some(
-				(t) =>
-					(t + "").toLowerCase().includes("uri") ||
-					(t + "").toLowerCase().includes("text")
-			);
-			if (hasUrl) {
-				_dragDepth++;
-				showDropOverlay();
+			const dt = e.dataTransfer || null;
+			if (!hasLikelyUrlPayload(dt)) return;
+			_dragDepth++;
+			showDropOverlay();
+			e.preventDefault();
+			e.stopPropagation();
+			if (dt) {
+				try {
+					dt.dropEffect = "copy";
+				} catch {}
 			}
 		} catch {}
 	});
@@ -3141,22 +3173,23 @@ function getRecByTile(tile) {
 		try {
 			// If a tile is being dragged for reordering, let that flow handle events
 			if (document.querySelector(".tile.dragging")) return;
-			const types = (e.dataTransfer && e.dataTransfer.types) || [];
-			const hasUrl = Array.from(types).some(
-				(t) =>
-					(t + "").toLowerCase().includes("uri") ||
-					(t + "").toLowerCase().includes("text")
-			);
-			if (hasUrl) {
-				// If the payload is a tile instanceId, don't treat it as a URL drop
-				const txt =
-					(e.dataTransfer && (e.dataTransfer.getData("text/plain") || "")) ||
-					"";
-				if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
-					return;
-				showDropOverlay();
-				e.preventDefault(); // allow drop
+			const dt = e.dataTransfer || null;
+			const hasUrlPayload = hasLikelyUrlPayload(dt);
+			if (_dropOverlay || hasUrlPayload) {
+				e.preventDefault();
+				e.stopPropagation();
+				if (dt) {
+					try {
+						dt.dropEffect = "copy";
+					} catch {}
+				}
 			}
+			if (!hasUrlPayload || !dt) return;
+			// If the payload is a tile instanceId, don't treat it as a URL drop
+			const txt = (dt.getData("text/plain") || "").trim();
+			if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
+				return;
+			showDropOverlay();
 		} catch {}
 	});
 	window.addEventListener("dragleave", (e) => {
@@ -3170,19 +3203,27 @@ function getRecByTile(tile) {
 			// If a tile is being dragged for reordering, ignore
 			if (document.querySelector(".tile.dragging")) return;
 			const dt = e.dataTransfer;
-			if (!dt) return;
-			const txt = (dt.getData("text/plain") || "").trim();
-			if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
-				return; // reordering payload
-			const urls = extractUrls(dt);
-			if (!urls.length) {
-				e.preventDefault();
-				e.stopPropagation();
-				hideDropOverlay();
+			const hasUrlPayload = hasLikelyUrlPayload(dt);
+			if (!hasUrlPayload || !dt) {
+				if (_dropOverlay) {
+					e.preventDefault();
+					e.stopPropagation();
+					hideDropOverlay();
+				}
 				return;
 			}
 			e.preventDefault();
 			e.stopPropagation();
+			const txt = (dt.getData("text/plain") || "").trim();
+			if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt)) {
+				hideDropOverlay();
+				return; // reordering payload
+			}
+			const urls = extractUrls(dt);
+			if (!urls.length) {
+				hideDropOverlay();
+				return;
+			}
 			hideDropOverlay();
 			ensureCustomThen(() => addUrls(urls));
 		} catch {}
