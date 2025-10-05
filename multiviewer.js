@@ -2897,23 +2897,41 @@ function layoutGrid() {
 	const aspectW = 16,
 		aspectH = 9;
 
-	// Single spotlight: make the one focused tile span full width at the top,
-	// with the other tiles arranged underneath in a centered grid.
+	// Spotlight: when one or more tiles are focused, stack each focused tile as a full-width
+	// 16:9 row at the top, and place all non-focused tiles below in a compact, centered grid.
 	const focusedTiles = tiles.filter((t) => t.classList.contains("focused"));
-	if (focusedTiles.length === 1) {
-		const focusedEl = focusedTiles[0];
-		const others = tiles.filter((t) => t !== focusedEl);
+	if (focusedTiles.length >= 1) {
+		const others = tiles.filter((t) => !t.classList.contains("focused"));
+		const f = focusedTiles.length;
 		const m = others.length;
-		// Desired height for focused tile to keep 16:9 at full width
-		const desiredFocusedH = Math.floor((availableW * aspectH) / aspectW);
-		// Compute small-tile layout using remaining height below the focused tile
-		const remainingH = Math.max(
-			0,
-			availableH - desiredFocusedH - (m > 0 ? gap : 0)
-		);
-		let bestColsSmall = Math.max(1, Math.min(m || 1, 6));
+		// Height for each full-width hero row
+		const heroH = Math.floor((availableW * aspectH) / aspectW);
+
+		if (m === 0) {
+			// Only focused tiles: stack full-width heroes
+			grid.style.gridTemplateColumns = `repeat(1, ${availableW}px)`;
+			grid.style.gridAutoRows = `${Math.max(1, heroH)}px`;
+			grid.style.gridAutoFlow = "row"; // prevent back-fill above heroes
+			tiles.forEach((t) => {
+				if (t.classList.contains("focused")) {
+					t.style.gridColumn = `1 / -1`;
+					t.style.gridRow = `span 1`;
+				} else {
+					t.style.gridColumn = `span 1`;
+					t.style.gridRow = `span 1`;
+				}
+			});
+			return;
+		}
+
+		// Space remaining for the small grid (rows of non-focused tiles)
+		const heroesTotalH = f * heroH + (f - 1) * gap;
+		const remainingH = Math.max(0, availableH - heroesTotalH - gap);
+
+		// Choose small-grid columns to maximize tile size in the remaining area
+		let bestColsSmall = Math.max(1, Math.min(m, 6));
 		let bestScaleSmall = 0;
-		if (m > 0 && remainingH > 0) {
+		if (remainingH > 0) {
 			for (let cols = 1; cols <= Math.min(m, 8); cols++) {
 				const rows = Math.ceil(m / cols);
 				const totalGapW = gap * (cols - 1);
@@ -2927,35 +2945,30 @@ function layoutGrid() {
 					bestColsSmall = cols;
 				}
 			}
-		} else {
-			bestColsSmall = Math.max(1, Math.min(m || 1, 6));
 		}
-		const tileWSmall =
-			m > 0 && bestScaleSmall > 0
-				? Math.floor(aspectW * bestScaleSmall)
-				: Math.floor(
-						(availableW - gap * (bestColsSmall - 1)) /
-							Math.max(1, bestColsSmall)
-				  );
-		const tileHSmall = Math.floor((tileWSmall * aspectH) / aspectW);
+		const tileWSmall = Math.floor(
+			bestScaleSmall > 0
+				? aspectW * bestScaleSmall
+				: (availableW - gap * (bestColsSmall - 1)) / Math.max(1, bestColsSmall)
+		);
+		const tileHSmall = Math.max(
+			1,
+			Math.floor((tileWSmall * aspectH) / aspectW)
+		);
 
-		// Grid columns fill width so focused span covers full container width
+		// Fixed-px columns for small grid keep 16:9 and allow centering via justify-content
 		grid.style.gridTemplateColumns = `repeat(${Math.max(
 			1,
 			bestColsSmall
-		)}, 1fr)`;
-		grid.style.gridAutoRows = `${Math.max(1, tileHSmall)}px`;
-		grid.style.gridAutoFlow = "dense";
+		)}, ${tileWSmall}px)`;
+		grid.style.gridAutoRows = `${tileHSmall}px`;
+		grid.style.gridAutoFlow = "row"; // ensure others are strictly below heroes
 
-		// Compute row span for the focused tile so its height ≈ 16:9 at full width
-		// Convert desiredFocusedH into a multiple of auto-rows
-		const autoRow = Math.max(1, tileHSmall || desiredFocusedH);
-		const focusedRowSpan = Math.max(1, Math.round(desiredFocusedH / autoRow));
-
-		// Apply spans
+		// Focused rows span enough small rows to reach full-width 16:9 height
+		const focusedRowSpan = Math.max(1, Math.round(heroH / tileHSmall));
 		tiles.forEach((t) => {
-			if (t === focusedEl) {
-				t.style.gridColumn = `1 / -1`; // span all columns
+			if (t.classList.contains("focused")) {
+				t.style.gridColumn = `1 / -1`;
 				t.style.gridRow = `span ${focusedRowSpan}`;
 			} else {
 				t.style.gridColumn = `span 1`;
