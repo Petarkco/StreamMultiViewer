@@ -214,6 +214,29 @@ button:active {
 	overflow: hidden;
 }
 
+/* Drag and drop visuals */
+.tile.dragging {
+	opacity: 0.75;
+	border-color: #3a7afe;
+}
+.tile.drop-target {
+	outline: 2px dashed #3a7afe;
+	outline-offset: -2px;
+}
+
+/* Smooth FLIP transitions */
+.tile.flip-animating {
+	transition: transform 160ms ease, opacity 160ms ease;
+}
+
+/* Drag handle styling */
+.drag-handle {
+	cursor: grab;
+}
+.drag-handle:active {
+	cursor: grabbing;
+}
+
 .tile video {
 	width: 100%;
 	height: 100%;
