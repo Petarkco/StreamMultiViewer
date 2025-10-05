@@ -2877,6 +2877,8 @@ function layoutGrid() {
 	);
 	const aspectW = 16,
 		aspectH = 9;
+	const WIDTH_WASTE_WEIGHT = 1.35;
+	const EPSILON = 1e-3;
 	let best = null;
 	for (let cols = 1; cols <= n; cols++) {
 		const rows = Math.ceil(n / cols);
@@ -2892,9 +2894,9 @@ function layoutGrid() {
 		const usedH = tileH * rows + totalGapH;
 		const unusedW = Math.max(0, availableW - usedW);
 		const unusedH = Math.max(0, availableH - usedH);
-		const relativeWaste =
-			(availableW > 0 ? unusedW / availableW : 0) +
-			(availableH > 0 ? unusedH / availableH : 0);
+		const widthWaste = availableW > 0 ? unusedW / availableW : 0;
+		const heightWaste = availableH > 0 ? unusedH / availableH : 0;
+		const weightedWaste = widthWaste * WIDTH_WASTE_WEIGHT + heightWaste;
 		const tileArea = tileW * tileH;
 		const candidate = {
 			cols,
@@ -2903,26 +2905,35 @@ function layoutGrid() {
 			tileH,
 			usedW,
 			usedH,
-			relativeWaste,
+			widthWaste,
+			heightWaste,
+			weightedWaste,
 			tileArea,
 		};
 		if (!best) {
 			best = candidate;
 			continue;
 		}
-		if (candidate.relativeWaste < best.relativeWaste - 1e-3) {
+		if (candidate.weightedWaste < best.weightedWaste - EPSILON) {
 			best = candidate;
 			continue;
 		}
 		if (
-			Math.abs(candidate.relativeWaste - best.relativeWaste) <= 1e-3 &&
+			Math.abs(candidate.weightedWaste - best.weightedWaste) <= EPSILON &&
+			candidate.widthWaste < best.widthWaste - EPSILON
+		) {
+			best = candidate;
+			continue;
+		}
+		if (
+			Math.abs(candidate.weightedWaste - best.weightedWaste) <= EPSILON &&
 			candidate.tileArea > best.tileArea + 1
 		) {
 			best = candidate;
 			continue;
 		}
 		if (
-			Math.abs(candidate.relativeWaste - best.relativeWaste) <= 1e-3 &&
+			Math.abs(candidate.weightedWaste - best.weightedWaste) <= EPSILON &&
 			Math.abs(candidate.tileArea - best.tileArea) <= 1 &&
 			candidate.cols > best.cols
 		) {
