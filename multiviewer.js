@@ -586,9 +586,16 @@ function addStreamTile(url, passedInstanceId, labelText) {
 			return;
 		}
 		if (action === "open") {
-			window.open(url, "_blank", "noopener");
+			try {
+				const rec = getRecByTile(tile);
+				const href = rec && rec.url ? rec.url : url;
+				window.open(href, "_blank", "noopener");
+			} catch {
+				window.open(url, "_blank", "noopener");
+			}
 		} else if (action === "close") {
-			destroyTile(tile, url);
+			const rec = getRecByTile(tile);
+			destroyTile(tile, (rec && rec.url) || url);
 			saveList();
 			layoutGrid();
 		}
@@ -1202,6 +1209,21 @@ function setupPlayer(rec) {
 					capLevelToPlayerSize: false,
 				});
 				rec.hls = hls;
+				// Persist chosen base URL if it differs and works
+				try {
+					if (_firstTry && _firstTry !== url) {
+						rec._activeUrl = _firstTry;
+						// update rec.url and streamEntries
+						rec.url = _firstTry;
+						const idx = streamEntries.findIndex(
+							(e) => e.instanceId === rec.instanceId
+						);
+						if (idx !== -1) {
+							streamEntries[idx].url = _firstTry;
+							saveList();
+						}
+					}
+				} catch {}
 				// small helper to push debug messages
 				const pushDebug = (msg) => {
 					try {
@@ -1441,6 +1463,7 @@ function setupPlayer(rec) {
 					preflightManifest(_secondTry, 5000)
 						.then((pf2) => {
 							if (pf2 && pf2.ok) {
+								// Since secondTry is the original full URL, keep rec.url as-is
 								rec._activeUrl = _secondTry;
 								// Re-run setup to attach using the second URL
 								try {
@@ -1464,6 +1487,19 @@ function setupPlayer(rec) {
 			.then((pf) => {
 				if (pf && pf.ok) {
 					rec._activeUrl = _firstTry;
+					// Persist trimmed URL when base candidate works
+					if (_firstTry !== url) {
+						try {
+							rec.url = _firstTry;
+							const idx = streamEntries.findIndex(
+								(e) => e.instanceId === rec.instanceId
+							);
+							if (idx !== -1) {
+								streamEntries[idx].url = _firstTry;
+								saveList();
+							}
+						} catch {}
+					}
 					nativeTry(_firstTry);
 					return;
 				}
