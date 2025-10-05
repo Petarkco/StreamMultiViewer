@@ -3175,11 +3175,21 @@ function getRecByTile(tile) {
 			if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
 				return; // reordering payload
 			const urls = extractUrls(dt);
-			if (!urls.length) return;
+			if (!urls.length) {
+				e.preventDefault();
+				e.stopPropagation();
+				hideDropOverlay();
+				return;
+			}
 			e.preventDefault();
 			e.stopPropagation();
 			hideDropOverlay();
 			ensureCustomThen(() => addUrls(urls));
+		} catch {}
+	});
+	window.addEventListener("dragend", () => {
+		try {
+			hideDropOverlay();
 		} catch {}
 	});
 })();
