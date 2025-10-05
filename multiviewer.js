@@ -5,6 +5,17 @@ const streamEntries = []; // duplicates allowed; each entry: { url, instanceId }
 const focusedIds = new Set();
 
 const grid = document.getElementById("grid");
+const heroGrid = (() => {
+	let existing = document.getElementById("heroGrid");
+	if (existing) return existing;
+	if (!grid || !grid.parentNode) return null;
+	const el = document.createElement("div");
+	el.id = "heroGrid";
+	el.className = "grid hero-grid";
+	el.hidden = true;
+	grid.parentNode.insertBefore(el, grid);
+	return el;
+})();
 const input = document.getElementById("urlInput");
 const addBtn = document.getElementById("addBtn");
 const clearBtn = document.getElementById("clearBtn");
@@ -30,6 +41,13 @@ function loadSettings() {
 		if (parsed && typeof parsed === "object")
 			settings = Object.assign(settings, parsed);
 	} catch {}
+}
+
+function getAllTiles() {
+	const list = [];
+	if (heroGrid) list.push(...heroGrid.querySelectorAll(".tile"));
+	if (grid) list.push(...grid.querySelectorAll(".tile"));
+	return list;
 }
 
 // Enable/disable toolbar controls depending on view mode
@@ -370,11 +388,9 @@ function loadPresets(mode) {
 }
 
 function updateEmptyState() {
-	const hasTile = [...grid.children].some((el) =>
-		el.classList.contains("tile")
-	);
+	const totalTiles = getAllTiles().length;
 	const existing = grid.querySelector(".empty");
-	if (!hasTile) {
+	if (totalTiles === 0) {
 		if (!existing) {
 			const div = document.createElement("div");
 			div.className = "empty";
@@ -444,7 +460,7 @@ function addStreamTile(url, passedInstanceId, labelText) {
 		saveList();
 		// Reorder DOM nodes without destroying players
 		try {
-			const tiles = Array.from(grid.querySelectorAll(".tile"));
+			const tiles = getAllTiles();
 			const fromTile = tiles.find(
 				(t) => t.dataset && t.dataset.instanceId === fromId
 			);
@@ -2867,276 +2883,233 @@ function removeAllTiles(save = true) {
 	updateEmptyState();
 }
 
-// Fit-all layout
-function layoutGrid() {
-	const tiles = [...grid.children].filter((el) =>
-		el.classList.contains("tile")
+function layoutHeroSection(
+	container,
+	tiles,
+	availableWidth,
+	gap,
+	aspectW,
+	aspectH
+) {
+	if (!container || tiles.length === 0) return 0;
+	const width = Math.max(
+		availableWidth,
+		container.clientWidth,
+		document.documentElement.clientWidth - 12
 	);
-	const n = tiles.length;
-	if (n === 0) {
-		grid.style.gridTemplateColumns = "1fr";
-		grid.style.gridAutoRows = "1fr";
+	const maxCols = Math.min(
+		tiles.length,
+		Math.max(1, Math.floor(width / 260)),
+		6
+	);
+	let best = null;
+	const upperBound = Math.max(1, Math.min(tiles.length, maxCols));
+	for (let cols = 1; cols <= upperBound; cols++) {
+		const totalGap = gap * (cols - 1);
+		const tileW = (width - totalGap) / cols;
+		if (tileW <= 0) continue;
+		const tileH = (tileW * aspectH) / aspectW;
+		const rows = Math.max(1, Math.ceil(tiles.length / cols));
+		const score = tileW * tileH - rows * 0.01;
+		if (!best || score > best.score) {
+			best = { cols, tileW, tileH, rows, score };
+		}
+	}
+	if (!best) return 0;
+	container.style.gridTemplateColumns = `repeat(${best.cols}, ${best.tileW}px)`;
+	container.style.gridAutoRows = `${best.tileH}px`;
+	container.style.gridAutoFlow = "row";
+	container.style.gridTemplateRows = "";
+	tiles.forEach((tile) => {
+		tile.style.gridColumn = "span 1";
+		tile.style.gridRow = "span 1";
+		tile.style.gridColumnStart = "";
+		tile.style.gridRowStart = "";
+		tile.style.zIndex = "3";
+	});
+	return best.rows * best.tileH + (best.rows > 1 ? (best.rows - 1) * gap : 0);
+}
+
+function layoutRegularSection(
+	container,
+	tiles,
+	availableWidth,
+	availableHeight,
+	gap,
+	aspectW,
+	aspectH
+) {
+	if (!container) return;
+	const count = tiles.length;
+	if (count === 0) {
+		container.style.gridTemplateColumns = "1fr";
+		container.style.gridAutoRows = "1fr";
+		container.style.gridAutoFlow = "row";
+		container.style.gridTemplateRows = "";
 		return;
 	}
-	// ensure tile elements reflect current focus state
-	try {
-		tiles.forEach((t) => {
-			const id = t.dataset.instanceId || getRecByTile(t)?.instanceId || "";
-			if (id && focusedIds.has(id)) t.classList.add("focused");
-			else t.classList.remove("focused");
-		});
-	} catch {}
-	// Do not mutate DOM order here; CSS 'order' handles visual priority
+	const width = Math.max(
+		availableWidth,
+		container.clientWidth,
+		document.documentElement.clientWidth - 12
+	);
+	let best = { cols: 1, scale: 0 };
+	const maxCols = Math.max(1, Math.min(count, 8));
+	for (let cols = 1; cols <= maxCols; cols++) {
+		const totalGapW = gap * (cols - 1);
+		const cellW = (width - totalGapW) / cols;
+		if (cellW <= 0) continue;
+		const rows = Math.max(1, Math.ceil(count / cols));
+		const totalGapH = gap * (rows - 1);
+		let cellH = Infinity;
+		if (availableHeight > 0) {
+			const raw = (availableHeight - totalGapH) / rows;
+			if (isFinite(raw) && raw > 0) cellH = raw;
+		}
+		const widthScale = cellW / aspectW;
+		const heightScale = cellH === Infinity ? widthScale : cellH / aspectH;
+		const scale = Math.min(widthScale, Math.max(heightScale, 0));
+		if (scale > best.scale) best = { cols, scale };
+	}
+	if (!best || best.scale <= 0) {
+		const fallbackCols = Math.max(1, Math.min(count, Math.floor(width / 260)));
+		const totalGapW = gap * (fallbackCols - 1);
+		const cellW = (width - totalGapW) / fallbackCols;
+		best = {
+			cols: fallbackCols,
+			scale: Math.max(cellW / aspectW, 120 / aspectW),
+		};
+	}
+	const tileW = Math.max(1, Math.floor(aspectW * best.scale));
+	const tileH = Math.max(1, Math.floor(aspectH * best.scale));
+	container.style.gridTemplateColumns = `repeat(${best.cols}, ${tileW}px)`;
+	container.style.gridAutoRows = `${tileH}px`;
+	container.style.gridAutoFlow = "row";
+	container.style.gridTemplateRows = "";
+	tiles.forEach((tile) => {
+		tile.style.gridColumn = "span 1";
+		tile.style.gridRow = "span 1";
+		tile.style.gridColumnStart = "";
+		tile.style.gridRowStart = "";
+		tile.style.zIndex = "1";
+	});
+}
+
+// Fit-all layout with separate hero container
+function layoutGrid() {
+	if (!grid) return;
+	const tiles = getAllTiles();
+	const totalTiles = tiles.length;
+	const aspectW = 16;
+	const aspectH = 9;
 	const gap =
 		parseFloat(getComputedStyle(grid).getPropertyValue("--gap")) || 10;
-	const vw = document.documentElement.clientWidth,
-		vh = window.innerHeight;
+	const wrap = grid.parentElement;
+	const wrapStyles = wrap ? getComputedStyle(wrap) : null;
+	const wrapGap = wrapStyles ? parseFloat(wrapStyles.gap) || 0 : 0;
+	const paddingX = wrapStyles
+		? (parseFloat(wrapStyles.paddingLeft) || 0) +
+		  (parseFloat(wrapStyles.paddingRight) || 0)
+		: 12;
+	const paddingY = wrapStyles
+		? (parseFloat(wrapStyles.paddingTop) || 0) +
+		  (parseFloat(wrapStyles.paddingBottom) || 0)
+		: 12;
+	const viewportW = document.documentElement.clientWidth;
+	const viewportH = window.innerHeight;
 	const toolbarRect = toolbar.getBoundingClientRect();
-	const availableW = vw - 2 * 6;
-	const availableH = vh - toolbarRect.height - 2 * 6;
-	const aspectW = 16,
-		aspectH = 9;
-
-	// Spotlight: allow focused tiles to shrink horizontally (multi-column heroes) so that
-	// every stream remains visible. Focused tiles appear first (CSS order), forming one or
-	// more columns at the top; the rest fill rows beneath.
-	const focusedTiles = tiles.filter((t) => t.classList.contains("focused"));
-	if (focusedTiles.length >= 1) {
-		const others = tiles.filter((t) => !t.classList.contains("focused"));
-		const f = focusedTiles.length;
-		const m = others.length;
-
-		const betterLayout = (cand, prev) => {
-			if (!prev) return true;
-			if (cand.fits && !prev.fits) return true;
-			if (!cand.fits && prev.fits) return false;
-			if (!cand.fits && !prev.fits) {
-				if (cand.overflow !== prev.overflow)
-					return cand.overflow < prev.overflow;
-			}
-			if (cand.heroScale !== prev.heroScale)
-				return cand.heroScale > prev.heroScale;
-			if (cand.otherScale !== prev.otherScale)
-				return cand.otherScale > prev.otherScale;
-			if (cand.heroCols !== prev.heroCols) return cand.heroCols < prev.heroCols;
-			if (cand.totalCols !== prev.totalCols)
-				return cand.totalCols < prev.totalCols;
-			if (cand.rowH !== prev.rowH) return cand.rowH > prev.rowH;
-			return cand.colW > prev.colW;
-		};
-
-		let best = null;
-		const maxTotalCols = Math.min(
-			8,
-			Math.max(1, f + Math.max(1, Math.min(m, 6)))
-		);
-		let minTotalCols = m > 0 ? 2 : 1;
-		if (minTotalCols > maxTotalCols) minTotalCols = maxTotalCols;
-		for (let totalCols = minTotalCols; totalCols <= maxTotalCols; totalCols++) {
-			const colW = (availableW - gap * (totalCols - 1)) / totalCols;
-			if (colW <= 0) continue;
-			const rowH = (colW * aspectH) / aspectW;
-			for (let heroCols = 1; heroCols <= Math.min(f, totalCols); heroCols++) {
-				let baseSpan = Math.floor(totalCols / heroCols);
-				if (baseSpan < 1) baseSpan = 1;
-				const spans = new Array(heroCols).fill(baseSpan);
-				let leftover = totalCols - baseSpan * heroCols;
-				for (let i = 0; i < heroCols && leftover > 0; i++, leftover--)
-					spans[i]++;
-				if (m > 0 && heroCols === 1 && totalCols > 1)
-					spans[0] = Math.max(1, Math.min(spans[0], totalCols - 1));
-				const minSpan = Math.min(...spans);
-				const maxSpan = Math.max(...spans);
-				const minHeroWidth =
-					minSpan * colW + (minSpan > 0 ? (minSpan - 1) * gap : 0);
-				let heroRowSpan = Math.max(
-					1,
-					Math.round((minHeroWidth * aspectH) / (aspectW * rowH))
-				);
-				if (maxSpan > 1 && heroRowSpan < 2) heroRowSpan = 2;
-				const heroRows = Math.ceil(f / heroCols);
-				let heroRowsHeight =
-					heroRows * (heroRowSpan * rowH) + (heroRows - 1) * gap;
-				const smallRows = m > 0 ? Math.ceil(m / totalCols) : 0;
-				const smallHeight =
-					smallRows * rowH + (smallRows > 0 ? (smallRows - 1) * gap : 0);
-				let totalHeight =
-					heroRowsHeight + (m > 0 && f > 0 ? gap : 0) + smallHeight;
-				let overflow = totalHeight - availableH;
-				while (overflow > 0 && heroRowSpan > 1) {
-					heroRowSpan--;
-					heroRowsHeight =
-						heroRows * (heroRowSpan * rowH) + (heroRows - 1) * gap;
-					totalHeight =
-						heroRowsHeight + (m > 0 && f > 0 ? gap : 0) + smallHeight;
-					overflow = totalHeight - availableH;
-				}
-				const heroHeightPx =
-					heroRowSpan * rowH + (heroRowSpan > 0 ? (heroRowSpan - 1) * gap : 0);
-				const heroScale = Math.min(
-					minHeroWidth / aspectW,
-					heroHeightPx / aspectH
-				);
-				const otherScale = Math.min(colW / aspectW, rowH / aspectH);
-				const candidate = {
-					totalCols,
-					heroCols,
-					colW,
-					rowH,
-					spans,
-					heroRowSpan,
-					heroRows,
-					smallRows,
-					overflow,
-					fits: overflow <= 0,
-					heroScale,
-					otherScale,
-				};
-				if (betterLayout(candidate, best)) best = candidate;
-			}
-		}
-		if (!best) return;
-
-		const {
-			totalCols,
-			colW,
-			rowH,
-			heroCols,
-			heroRowSpan,
-			heroRows,
-			spans,
-			smallRows,
-		} = best;
-
-		const tileWpx = Math.max(1, colW);
-		const tileHpx = Math.max(1, rowH);
-		grid.style.gridTemplateColumns = `repeat(${totalCols}, ${tileWpx}px)`;
-		grid.style.gridAutoRows = `${tileHpx}px`;
-		grid.style.gridAutoFlow = "row";
-		const heroRowCount = heroRows * heroRowSpan;
-		const otherRowCount = smallRows || 0;
-		const templateParts = [];
-		if (heroRowCount > 0)
-			templateParts.push(`repeat(${heroRowCount}, ${tileHpx}px)`);
-		if (otherRowCount > 0)
-			templateParts.push(`repeat(${otherRowCount}, ${tileHpx}px)`);
-		grid.style.gridTemplateRows = templateParts.join(" ");
-
-		const heroOffsets = [];
-		let accCols = 0;
-		for (let i = 0; i < spans.length; i++) {
-			heroOffsets.push(accCols);
-			accCols += spans[i];
-		}
-		const occupancy = new Map();
-		const ensureRow = (row) => {
-			let set = occupancy.get(row);
-			if (!set) {
-				set = new Set();
-				occupancy.set(row, set);
-			}
-			return set;
-		};
-		const markRange = (row, colStart, span) => {
-			const set = ensureRow(row);
-			for (let c = 0; c < span; c++) set.add(colStart + c);
-		};
-		let heroPlaced = 0;
-		focusedTiles.forEach((t) => {
-			const heroRowIndex = Math.floor(heroPlaced / heroCols);
-			const heroColIndex = heroPlaced % heroCols;
-			const span = spans[heroColIndex] || spans[spans.length - 1] || 1;
-			const colStart = (heroOffsets[heroColIndex] || 0) + 1;
-			const rowStart = heroRowIndex * heroRowSpan + 1;
-			t.style.gridColumn = `${colStart} / span ${span}`;
-			t.style.gridRow = `${rowStart} / span ${heroRowSpan}`;
-			t.style.gridColumnStart = `${colStart}`;
-			t.style.gridRowStart = `${rowStart}`;
-			t.style.zIndex = "3";
-			for (let r = 0; r < heroRowSpan; r++)
-				markRange(rowStart + r, colStart, span);
-			heroPlaced++;
-		});
-		const firstOtherRow = heroRowCount + 1;
-		const placeOther = (tile) => {
-			let row = firstOtherRow;
-			for (;;) {
-				const set = ensureRow(row);
-				let placed = false;
-				for (let col = 1; col <= totalCols; col++) {
-					if (!set.has(col)) {
-						tile.style.gridColumn = `${col} / span 1`;
-						tile.style.gridRow = `${row} / span 1`;
-						tile.style.gridColumnStart = `${col}`;
-						tile.style.gridRowStart = `${row}`;
-						markRange(row, col, 1);
-						tile.style.zIndex = "1";
-						placed = true;
-						break;
-					}
-				}
-				if (placed) break;
-				row++;
-			}
-		};
-		others.forEach(placeOther);
-		return;
-	}
-	let bestCols = 1,
-		bestScale = 0;
-	// compute effective number of cells accounting for focused tiles spanning multiple cells
-	const focusedCount = tiles.filter((t) =>
-		t.classList.contains("focused")
-	).length;
-	for (let cols = 1; cols <= Math.max(1, n + 3); cols++) {
-		// Maintain 16:9: make focused tiles 2x2 when possible; with 1 column, fall back to 1x1
-		const spanW = Math.min(2, cols);
-		const spanH = cols === 1 ? 1 : 2;
-		// effective total cell count: sum of weights (focused weight uses spanW*spanH)
-		const totalCells = tiles.reduce((acc, t) => {
-			const isFocused = t.classList.contains("focused");
-			return acc + (isFocused ? spanW * spanH : 1);
-		}, 0);
-		const rows = Math.ceil(totalCells / cols);
-		const totalGapW = gap * (cols - 1),
-			totalGapH = gap * (rows - 1);
-		const cellW = (availableW - totalGapW) / cols,
-			cellH = (availableH - totalGapH) / rows;
-		if (cellW <= 0 || cellH <= 0) continue;
-		const scale = Math.min(cellW / aspectW, cellH / aspectH);
-		if (scale > bestScale) {
-			bestScale = scale;
-			bestCols = cols;
-		}
-	}
-	const tileW = Math.floor(aspectW * bestScale),
-		tileH = Math.floor(aspectH * bestScale);
-	grid.style.gridTemplateColumns = `repeat(${bestCols}, ${tileW}px)`;
-	grid.style.gridAutoRows = `${tileH}px`;
-	grid.style.gridAutoFlow = "dense"; // pack gaps tightly when focused tiles span multiple cells
-	grid.style.gridTemplateRows = "";
-
-	// Apply per-tile spans based on focus state
-	const focusedSpanW = Math.min(2, bestCols);
-	const focusedSpanH = bestCols === 1 ? 1 : 2;
-	tiles.forEach((t) => {
-		if (t.classList.contains("focused")) {
-			t.style.gridColumn = `span ${focusedSpanW}`;
-			t.style.gridRow = `span ${focusedSpanH}`;
-			t.style.gridColumnStart = "";
-			t.style.gridRowStart = "";
-		} else {
-			t.style.gridColumn = "span 1";
-			t.style.gridRow = "span 1";
-			t.style.gridColumnStart = "";
-			t.style.gridRowStart = "";
-		}
+	const hasAnyTiles = totalTiles > 0;
+	const gapAfterToolbar = hasAnyTiles ? wrapGap : 0;
+	const availableWidth = Math.max(
+		grid.clientWidth,
+		heroGrid?.clientWidth || 0,
+		(wrap ? wrap.clientWidth : viewportW) - paddingX,
+		viewportW - paddingX
+	);
+	const totalHeightBudget = Math.max(
+		0,
+		viewportH - paddingY - toolbarRect.height - gapAfterToolbar
+	);
+	const focusedTiles = [];
+	const regularTiles = [];
+	const heroContainer = heroGrid;
+	tiles.forEach((tile) => {
+		if (!tile || !tile.classList || !tile.classList.contains("tile")) return;
+		let id = "";
+		try {
+			id = tile.dataset.instanceId || getRecByTile(tile)?.instanceId || "";
+		} catch {}
+		const isFocused = heroContainer && id && focusedIds.has(id);
+		tile.classList.toggle("focused", !!isFocused);
+		if (isFocused) focusedTiles.push(tile);
+		else regularTiles.push(tile);
 	});
+
+	if (!heroContainer) {
+		regularTiles.push(...focusedTiles);
+		focusedTiles.length = 0;
+	}
+	if (heroContainer) {
+		focusedTiles.forEach((tile) => {
+			if (tile.parentNode !== heroContainer) heroContainer.appendChild(tile);
+		});
+		regularTiles.forEach((tile) => {
+			if (tile.parentNode === heroContainer && grid) grid.appendChild(tile);
+		});
+	}
+	regularTiles.forEach((tile) => {
+		if (tile.parentNode !== grid) grid.appendChild(tile);
+	});
+
+	let heroHeight = 0;
+	if (heroContainer) {
+		heroContainer.hidden = focusedTiles.length === 0;
+		if (focusedTiles.length > 0) {
+			heroContainer.hidden = false;
+			heroHeight = layoutHeroSection(
+				heroContainer,
+				focusedTiles,
+				availableWidth,
+				gap,
+				aspectW,
+				aspectH
+			);
+		} else {
+			heroContainer.style.gridTemplateColumns = "";
+			heroContainer.style.gridAutoRows = "";
+			heroContainer.style.gridAutoFlow = "";
+			heroContainer.style.gridTemplateRows = "";
+		}
+	}
+	const gapBetweenStacks =
+		focusedTiles.length > 0 && regularTiles.length > 0 ? wrapGap : 0;
+	const availableForRegular = Math.max(
+		0,
+		totalHeightBudget - heroHeight - gapBetweenStacks
+	);
+	layoutRegularSection(
+		grid,
+		regularTiles,
+		availableWidth,
+		availableForRegular,
+		gap,
+		aspectW,
+		aspectH
+	);
+
+	if (totalTiles === 0) {
+		grid.style.gridTemplateColumns = "1fr";
+		grid.style.gridAutoRows = "1fr";
+		grid.style.gridAutoFlow = "row";
+		grid.style.gridTemplateRows = "";
+	}
+	updateEmptyState();
 }
 
 const ro = new ResizeObserver(() => layoutGrid());
 ro.observe(document.documentElement);
 ro.observe(grid);
+if (heroGrid) ro.observe(heroGrid);
 ro.observe(toolbar);
 window.addEventListener("orientationchange", () => setTimeout(layoutGrid, 50));
 window.addEventListener("resize", () => layoutGrid());
