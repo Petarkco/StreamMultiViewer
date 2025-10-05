@@ -117,18 +117,33 @@ function reorderTiles(fromId, toId, placeBefore = true) {
 		const nextTile = dragState.placeholder.nextElementSibling;
 		const prevTile = dragState.placeholder.previousElementSibling;
 		if (nextTile && nextTile.classList && nextTile.classList.contains("tile")) {
-			resolvedTargetId = nextTile.dataset.instanceId || null;
-			resolvedPlaceBefore = true;
-		} else if (
+			const nextId = nextTile.dataset
+				? nextTile.dataset.instanceId || null
+				: null;
+			if (nextId && nextId !== fromId) {
+				resolvedTargetId = nextId;
+				resolvedPlaceBefore = true;
+			}
+		}
+		if (
+			(!resolvedTargetId || resolvedTargetId === fromId) &&
 			prevTile &&
 			prevTile.classList &&
 			prevTile.classList.contains("tile")
 		) {
-			resolvedTargetId = prevTile.dataset.instanceId || null;
-			resolvedPlaceBefore = false;
-		} else {
-			resolvedTargetId = null;
+			const prevId = prevTile.dataset
+				? prevTile.dataset.instanceId || null
+				: null;
+			if (prevId && prevId !== fromId) {
+				resolvedTargetId = prevId;
+				resolvedPlaceBefore = false;
+			}
 		}
+		if (resolvedTargetId === fromId) resolvedTargetId = null;
+	}
+	if (!resolvedTargetId && toId && toId !== fromId) {
+		resolvedTargetId = toId;
+		resolvedPlaceBefore = !!placeBefore;
 	}
 	let insertIndex;
 	if (resolvedTargetId) {
