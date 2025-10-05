@@ -3208,17 +3208,14 @@ function getRecByTile(tile) {
 			fn();
 		}
 	};
-	// Indicate we accept link drops when appropriate
+	// Indicate we accept link drops when appropriate (prefer showing only for .m3u8)
 	window.addEventListener("dragenter", (e) => {
 		try {
 			if (document.querySelector(".tile.dragging")) return;
-			const types = (e.dataTransfer && e.dataTransfer.types) || [];
-			const hasUrl = Array.from(types).some(
-				(t) =>
-					(t + "").toLowerCase().includes("uri") ||
-					(t + "").toLowerCase().includes("text")
-			);
-			if (hasUrl) {
+			const dt = e.dataTransfer;
+			if (!dt) return;
+			const urls = extractUrls(dt);
+			if (urls && urls.length) {
 				_dragDepth++;
 				showDropOverlay();
 			}
@@ -3228,21 +3225,17 @@ function getRecByTile(tile) {
 		try {
 			// If a tile is being dragged for reordering, let that flow handle events
 			if (document.querySelector(".tile.dragging")) return;
-			const types = (e.dataTransfer && e.dataTransfer.types) || [];
-			const hasUrl = Array.from(types).some(
-				(t) =>
-					(t + "").toLowerCase().includes("uri") ||
-					(t + "").toLowerCase().includes("text")
-			);
-			if (hasUrl) {
-				// If the payload is a tile instanceId, don't treat it as a URL drop
-				const txt =
-					(e.dataTransfer && (e.dataTransfer.getData("text/plain") || "")) ||
-					"";
-				if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
-					return;
+			const dt = e.dataTransfer;
+			if (!dt) return;
+			const txt = (dt.getData("text/plain") || "").trim();
+			if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
+				return;
+			const urls = extractUrls(dt);
+			if (urls && urls.length) {
 				showDropOverlay();
-				e.preventDefault(); // allow drop
+				e.preventDefault(); // only allow drop for valid .m3u8 URLs
+			} else {
+				hideDropOverlay();
 			}
 		} catch {}
 	});
@@ -3262,11 +3255,19 @@ function getRecByTile(tile) {
 			if (isUuid(txt) && streamEntries.some((se) => se.instanceId === txt))
 				return; // reordering payload
 			const urls = extractUrls(dt);
-			if (!urls.length) return;
+			// Always prevent default navigation and hide overlay on drop
 			e.preventDefault();
 			e.stopPropagation();
 			hideDropOverlay();
+			_dragDepth = 0;
+			if (!urls || !urls.length) return; // Non-stream URL: no-op
 			ensureCustomThen(() => addUrls(urls));
+		} catch {}
+	});
+	// Fallback to ensure overlay disappears even if we miss some events
+	window.addEventListener("dragend", () => {
+		try {
+			hideDropOverlay();
 		} catch {}
 	});
 })();
