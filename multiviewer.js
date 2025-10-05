@@ -2987,33 +2987,27 @@ function layoutGrid() {
 		// Apply spans per tile
 		const heroTotalRows = heroRows * heroRowSpan;
 		let heroPlaced = 0;
-		tiles.forEach((t) => {
-			if (t.classList.contains("focused")) {
-				// span heroSpan columns and heroRowSpan rows
-				t.style.gridColumn = `span ${heroSpan}`;
-				t.style.gridRow = `span ${heroRowSpan}`;
-				t.style.gridColumnStart = "";
-				t.style.gridRowStart = "";
-				heroPlaced++;
-			} else {
-				t.style.gridColumn = "span 1";
-				t.style.gridRow = "span 1";
-				t.style.gridColumnStart = "";
-				t.style.gridRowStart = "";
-			}
+		focusedTiles.forEach((t) => {
+			const heroRowIndex = Math.floor(heroPlaced / heroCols);
+			const heroColIndex = heroPlaced % heroCols;
+			const colStart = heroColIndex * heroSpan + 1;
+			const rowStart = heroRowIndex * heroRowSpan + 1;
+			t.style.gridColumn = `${colStart} / span ${heroSpan}`;
+			t.style.gridRow = `${rowStart} / span ${heroRowSpan}`;
+			t.style.gridColumnStart = `${colStart}`;
+			t.style.gridRowStart = `${rowStart}`;
+			heroPlaced++;
 		});
-		if (m > 0) {
-			let idx = 0;
-			others.forEach((t) => {
-				const colStart = (idx % totalCols) + 1;
-				const rowStart = heroTotalRows + Math.floor(idx / totalCols) + 1;
-				t.style.gridColumn = `${colStart} / span 1`;
-				t.style.gridRow = `${rowStart} / span 1`;
-				t.style.gridColumnStart = `${colStart}`;
-				t.style.gridRowStart = `${rowStart}`;
-				idx++;
-			});
-		}
+		let idx = 0;
+		others.forEach((t) => {
+			const colStart = (idx % totalCols) + 1;
+			const rowStart = heroTotalRows + Math.floor(idx / totalCols) + 1;
+			t.style.gridColumn = `${colStart} / span 1`;
+			t.style.gridRow = `${rowStart} / span 1`;
+			t.style.gridColumnStart = `${colStart}`;
+			t.style.gridRowStart = `${rowStart}`;
+			idx++;
+		});
 		return;
 	}
 	let bestCols = 1,
