@@ -34,6 +34,7 @@ const input = document.getElementById("urlInput");
 	updateEmptyState();
 }
 
+<<<<<<< HEAD
 const HERO_TILE_PREFERRED_WIDTH = 480;
 const HERO_TILE_MIN_WIDTH = 260;
 const MIN_REGULAR_TILE_HEIGHT = 160;
@@ -108,6 +109,146 @@ function layoutHeroSection(
 		tile.style.gridColumnStart = "";
 		tile.style.gridRowStart = "";
 		tile.style.zIndex = "3";
+=======
+function getAllTiles() {
+	const list = [];
+	if (heroGrid) list.push(...heroGrid.querySelectorAll(".tile"));
+	if (grid) list.push(...grid.querySelectorAll(".tile"));
+	return list;
+}
+
+// Enable/disable toolbar controls depending on view mode
+function updateToolbarState() {
+	try {
+		const isCustom = feedSelector && feedSelector.value === "custom";
+		if (input) input.disabled = !isCustom;
+		if (addBtn) addBtn.disabled = !isCustom;
+		if (clearBtn) clearBtn.disabled = !isCustom;
+		// create/position overlay to visually block the input+buttons when not custom
+		try {
+			let overlay = toolbar.querySelector(".toolbar-disabled-overlay");
+			if (!overlay) {
+				overlay = document.createElement("div");
+				overlay.className = "toolbar-disabled-overlay";
+				toolbar.appendChild(overlay);
+			}
+			if (!isCustom) {
+				// position overlay to cover url input + add + clear buttons area
+				const first = input; // left bound after selector
+				const last = clearBtn; // right bound
+				const rectToolbar = toolbar.getBoundingClientRect();
+				const rectFirst = first.getBoundingClientRect();
+				const rectLast = last.getBoundingClientRect();
+				// compute offsets relative to toolbar
+				const left = rectFirst.left - rectToolbar.left - 2; // slight inset
+				const right = rectToolbar.right - rectLast.right - 2;
+				const width = rectLast.right - rectFirst.left + 4;
+				const top = rectFirst.top - rectToolbar.top - 2;
+				const height = rectFirst.height + 4;
+				overlay.style.left = left + "px";
+				overlay.style.top = top + "px";
+				overlay.style.width = width + "px";
+				overlay.style.height = height + "px";
+				overlay.classList.add("visible");
+				// mask input text for clarity
+				try {
+					input.classList.add("masked");
+				} catch {}
+			} else {
+				overlay.classList.remove("visible");
+				try {
+					input.classList.remove("masked");
+				} catch {}
+			}
+		} catch (e) {}
+	} catch {}
+}
+
+// reposition overlay on resize/toolbar changes
+window.addEventListener("resize", () => {
+	try {
+		const overlay = toolbar.querySelector(".toolbar-disabled-overlay");
+		if (overlay && overlay.classList.contains("visible")) updateToolbarState();
+	} catch {}
+});
+
+function saveSettings() {
+	try {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+	} catch {}
+	heroContainer.style.height = "";
+	heroContainer.style.minHeight = "";
+}
+
+// create a simple settings menu when clicking the settings button
+if (settingsBtn) {
+	settingsBtn.addEventListener("click", (e) => {
+		try {
+			const existing = document.querySelector(".settings-menu");
+			if (existing) {
+				existing.remove();
+				settingsBtn.setAttribute("aria-expanded", "false");
+				return;
+			}
+			const menu = document.createElement("div");
+			menu.className = "menu settings-menu";
+			const ul = document.createElement("ul");
+
+			const addCheckbox = (key, label) => {
+				const li = document.createElement("li");
+				const cb = document.createElement("input");
+				cb.type = "checkbox";
+				cb.id = "s-" + key;
+				cb.checked = !!settings[key];
+				cb.addEventListener("change", () => {
+					// Persist the preference but do NOT mutate any existing players.
+					// "By default" settings affect only page load and newly-created tiles.
+					settings[key] = !!cb.checked;
+					saveSettings();
+				});
+				const lbl = document.createElement("label");
+				lbl.htmlFor = cb.id;
+				lbl.style.marginLeft = "8px";
+				lbl.textContent = label;
+				li.style.display = "flex";
+				li.style.alignItems = "center";
+				li.style.gap = "8px";
+				li.appendChild(cb);
+				li.appendChild(lbl);
+				ul.appendChild(li);
+			};
+
+			addCheckbox("showDebugByDefault", "Show debug panel by default");
+			addCheckbox("autoplayMuted", "Autoplay streams muted");
+			// persistent global default for subtitles
+			addCheckbox("showSubtitlesByDefault", "Show subtitles by default");
+
+			menu.appendChild(ul);
+			// position near the settingsBtn
+			menu.style.visibility = "hidden";
+			// append to toolbar (toolbar is position:relative) so the menu is never clipped
+			try {
+				toolbar.appendChild(menu);
+			} catch {
+				document.body.appendChild(menu);
+			}
+			// place just below the toolbar, aligned to the right
+			menu.style.position = "absolute";
+			menu.style.top = `${toolbar.offsetHeight + 6}px`;
+			menu.style.right = "6px";
+			menu.style.left = "auto";
+			menu.style.visibility = "";
+			settingsBtn.setAttribute("aria-expanded", "true");
+			const off = (ev) => {
+				if (!menu.contains(ev.target) && ev.target !== settingsBtn) {
+					menu.remove();
+					settingsBtn.setAttribute("aria-expanded", "false");
+					document.removeEventListener("click", off);
+				}
+			};
+			setTimeout(() => document.addEventListener("click", off));
+		} catch (e) {}
+>>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
 	});
 	return best.rows * tileH + (best.rows > 1 ? (best.rows - 1) * gap : 0);
 }
@@ -2793,6 +2934,7 @@ function removeAllTiles(save = true) {
 	players.clear();
 	streamEntries.splice(0, streamEntries.length);
 	try {
+<<<<<<< HEAD
 			const viewportLimit = Math.max(
 				HERO_TILE_MIN_WIDTH,
 				document.documentElement.clientWidth - 12
@@ -2863,10 +3005,25 @@ function layoutRegularSection(
 	tiles,
 	availableWidth,
 	availableHeight,
+=======
+		focusedIds.clear();
+	} catch {}
+	try {
+		if (save) saveList();
+	} catch {}
+	updateEmptyState();
+}
+
+function layoutHeroSection(
+	container,
+	tiles,
+	availableWidth,
+>>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
 	gap,
 	aspectW,
 	aspectH
 ) {
+<<<<<<< HEAD
 	if (!container) return 0;
 	const count = tiles.length;
 	if (count === 0) {
@@ -2876,11 +3033,15 @@ function layoutRegularSection(
 		container.style.gridTemplateRows = "";
 		return 0;
 	}
+=======
+	if (!container || tiles.length === 0) return 0;
+>>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
 	const width = Math.max(
 		availableWidth,
 		container.clientWidth,
 		document.documentElement.clientWidth - 12
 	);
+<<<<<<< HEAD
 	const minScale = MIN_REGULAR_TILE_HEIGHT / aspectH;
 	let best = null;
 	let fallback = null;
@@ -2945,6 +3106,95 @@ function layoutRegularSection(
 	const scale = Math.max(best.effectiveScale, minScale);
 	const tileW = Math.max(1, Math.round(aspectW * Math.min(scale, best.widthScale)));
 	const tileH = Math.max(1, Math.round(aspectH * Math.min(scale, best.widthScale)));
+=======
+	const maxCols = Math.min(
+		tiles.length,
+		Math.max(1, Math.floor(width / 260)),
+		6
+	);
+	let best = null;
+	const upperBound = Math.max(1, Math.min(tiles.length, maxCols));
+	for (let cols = 1; cols <= upperBound; cols++) {
+		const totalGap = gap * (cols - 1);
+		const tileW = (width - totalGap) / cols;
+		if (tileW <= 0) continue;
+		const tileH = (tileW * aspectH) / aspectW;
+		const rows = Math.max(1, Math.ceil(tiles.length / cols));
+		const score = tileW * tileH - rows * 0.01;
+		if (!best || score > best.score) {
+			best = { cols, tileW, tileH, rows, score };
+		}
+	}
+	if (!best) return 0;
+	container.style.gridTemplateColumns = `repeat(${best.cols}, ${best.tileW}px)`;
+	container.style.gridAutoRows = `${best.tileH}px`;
+	container.style.gridAutoFlow = "row";
+	container.style.gridTemplateRows = "";
+	container.style.height = "auto";
+	container.style.minHeight = "0";
+	tiles.forEach((tile) => {
+		tile.style.gridColumn = "span 1";
+		tile.style.gridRow = "span 1";
+		tile.style.gridColumnStart = "";
+		tile.style.gridRowStart = "";
+		tile.style.zIndex = "3";
+	});
+	return best.rows * best.tileH + (best.rows > 1 ? (best.rows - 1) * gap : 0);
+}
+
+function layoutRegularSection(
+	container,
+	tiles,
+	availableWidth,
+	availableHeight,
+	gap,
+	aspectW,
+	aspectH
+) {
+	if (!container) return;
+	const count = tiles.length;
+	if (count === 0) {
+		container.style.gridTemplateColumns = "1fr";
+		container.style.gridAutoRows = "1fr";
+		container.style.gridAutoFlow = "row";
+		container.style.gridTemplateRows = "";
+		return;
+	}
+	const width = Math.max(
+		availableWidth,
+		container.clientWidth,
+		document.documentElement.clientWidth - 12
+	);
+	let best = { cols: 1, scale: 0 };
+	const maxCols = Math.max(1, Math.min(count, 8));
+	for (let cols = 1; cols <= maxCols; cols++) {
+		const totalGapW = gap * (cols - 1);
+		const cellW = (width - totalGapW) / cols;
+		if (cellW <= 0) continue;
+		const rows = Math.max(1, Math.ceil(count / cols));
+		const totalGapH = gap * (rows - 1);
+		let cellH = Infinity;
+		if (availableHeight > 0) {
+			const raw = (availableHeight - totalGapH) / rows;
+			if (isFinite(raw) && raw > 0) cellH = raw;
+		}
+		const widthScale = cellW / aspectW;
+		const heightScale = cellH === Infinity ? widthScale : cellH / aspectH;
+		const scale = Math.min(widthScale, Math.max(heightScale, 0));
+		if (scale > best.scale) best = { cols, scale };
+	}
+	if (!best || best.scale <= 0) {
+		const fallbackCols = Math.max(1, Math.min(count, Math.floor(width / 260)));
+		const totalGapW = gap * (fallbackCols - 1);
+		const cellW = (width - totalGapW) / fallbackCols;
+		best = {
+			cols: fallbackCols,
+			scale: Math.max(cellW / aspectW, 120 / aspectW),
+		};
+	}
+	const tileW = Math.max(1, Math.floor(aspectW * best.scale));
+	const tileH = Math.max(1, Math.floor(aspectH * best.scale));
+>>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
 	container.style.gridTemplateColumns = `repeat(${best.cols}, ${tileW}px)`;
 	container.style.gridAutoRows = `${tileH}px`;
 	container.style.gridAutoFlow = "row";
@@ -2956,8 +3206,11 @@ function layoutRegularSection(
 		tile.style.gridRowStart = "";
 		tile.style.zIndex = "1";
 	});
+<<<<<<< HEAD
 	const rows = best.rows || Math.max(1, Math.ceil(count / best.cols));
 	return rows * tileH + (rows > 1 ? (rows - 1) * gap : 0);
+=======
+>>>>>>> 1616240190c292cd910d0cb04404157e9bce048e
 }
 
 // Fit-all layout with separate hero container
