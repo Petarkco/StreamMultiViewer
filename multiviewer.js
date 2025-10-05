@@ -2844,36 +2844,97 @@ function layoutGrid() {
 	if (n === 0) {
 		grid.style.gridTemplateColumns = "1fr";
 		grid.style.gridAutoRows = "1fr";
+		grid.style.justifyContent = "stretch";
 		return;
 	}
+	const gridStyles = getComputedStyle(grid);
 	const gap =
-		parseFloat(getComputedStyle(grid).getPropertyValue("--gap")) || 10;
-	const vw = document.documentElement.clientWidth,
-		vh = window.innerHeight;
-	const toolbarRect = toolbar.getBoundingClientRect();
-	const availableW = vw - 2 * 6;
-	const availableH = vh - toolbarRect.height - 2 * 6;
+		parseFloat(gridStyles.getPropertyValue("--gap")) ||
+		parseFloat(gridStyles.gap) ||
+		10;
+	const wrap = grid.parentElement;
+	const wrapStyles = wrap ? getComputedStyle(wrap) : null;
+	const paddingX = wrapStyles
+		? (parseFloat(wrapStyles.paddingLeft) || 0) +
+		  (parseFloat(wrapStyles.paddingRight) || 0)
+		: 0;
+	const paddingY = wrapStyles
+		? (parseFloat(wrapStyles.paddingTop) || 0) +
+		  (parseFloat(wrapStyles.paddingBottom) || 0)
+		: 0;
+	const wrapGap = wrapStyles ? parseFloat(wrapStyles.gap) || 0 : 0;
+	const toolbarHeight = toolbar ? toolbar.offsetHeight : 0;
+	const fallbackW = document.documentElement.clientWidth - 12;
+	const fallbackH = window.innerHeight - toolbarHeight - 12;
+	const availableW = Math.max(
+		0,
+		(wrap ? wrap.clientWidth - paddingX : grid.clientWidth) || fallbackW
+	);
+	const availableH = Math.max(
+		0,
+		(wrap ? wrap.clientHeight - paddingY - toolbarHeight - wrapGap : 0) ||
+			fallbackH
+	);
 	const aspectW = 16,
 		aspectH = 9;
-	let bestCols = 1,
-		bestScale = 0;
+	let best = null;
 	for (let cols = 1; cols <= n; cols++) {
 		const rows = Math.ceil(n / cols);
-		const totalGapW = gap * (cols - 1),
-			totalGapH = gap * (rows - 1);
-		const cellW = (availableW - totalGapW) / cols,
-			cellH = (availableH - totalGapH) / rows;
-		if (cellW <= 0 || cellH <= 0) continue;
-		const scale = Math.min(cellW / aspectW, cellH / aspectH);
-		if (scale > bestScale) {
-			bestScale = scale;
-			bestCols = cols;
+		const totalGapW = gap * (cols - 1);
+		const totalGapH = gap * (rows - 1);
+		const maxTileW = (availableW - totalGapW) / cols;
+		const maxTileH = (availableH - totalGapH) / rows;
+		if (maxTileW <= 0 || maxTileH <= 0) continue;
+		const tileW = Math.min(maxTileW, maxTileH * (aspectW / aspectH));
+		const tileH = tileW * (aspectH / aspectW);
+		if (tileW <= 0 || tileH <= 0) continue;
+		const usedW = tileW * cols + totalGapW;
+		const usedH = tileH * rows + totalGapH;
+		const unusedW = Math.max(0, availableW - usedW);
+		const unusedH = Math.max(0, availableH - usedH);
+		const relativeWaste =
+			(availableW > 0 ? unusedW / availableW : 0) +
+			(availableH > 0 ? unusedH / availableH : 0);
+		const tileArea = tileW * tileH;
+		const candidate = {
+			cols,
+			rows,
+			tileW,
+			tileH,
+			usedW,
+			usedH,
+			relativeWaste,
+			tileArea,
+		};
+		if (!best) {
+			best = candidate;
+			continue;
+		}
+		if (candidate.relativeWaste < best.relativeWaste - 1e-3) {
+			best = candidate;
+			continue;
+		}
+		if (
+			Math.abs(candidate.relativeWaste - best.relativeWaste) <= 1e-3 &&
+			candidate.tileArea > best.tileArea + 1
+		) {
+			best = candidate;
+			continue;
+		}
+		if (
+			Math.abs(candidate.relativeWaste - best.relativeWaste) <= 1e-3 &&
+			Math.abs(candidate.tileArea - best.tileArea) <= 1 &&
+			candidate.cols > best.cols
+		) {
+			best = candidate;
 		}
 	}
-	const tileW = Math.floor(aspectW * bestScale),
-		tileH = Math.floor(aspectH * bestScale);
-	grid.style.gridTemplateColumns = `repeat(${bestCols}, ${tileW}px)`;
-	grid.style.gridAutoRows = `${tileH}px`;
+	if (!best) return;
+	const fmt = (val) => `${Math.max(0, val).toFixed(2)}px`;
+	grid.style.gridTemplateColumns = `repeat(${best.cols}, ${fmt(best.tileW)})`;
+	grid.style.gridAutoRows = fmt(best.tileH);
+	grid.style.justifyContent =
+		best.usedW < availableW - 0.5 ? "center" : "stretch";
 }
 
 const ro = new ResizeObserver(() => layoutGrid());
