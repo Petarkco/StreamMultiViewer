@@ -426,19 +426,25 @@ function addStreamTile(url, passedInstanceId, labelText) {
 			const fromId = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
 			const toId = tile.dataset.instanceId;
 			if (!fromId || !toId || fromId === toId) return;
-			reorderTiles(fromId, toId);
+			const rect = tile.getBoundingClientRect();
+			const dropBefore = e.clientY < rect.top + rect.height / 2;
+			reorderTiles(fromId, toId, dropBefore);
 		});
 	}
 	// Reorder streamEntries and re-render grid
-	function reorderTiles(fromId, toId) {
+	function reorderTiles(fromId, toId, placeBefore = true) {
 		// Only reorder in Custom mode
 		if (!(feedSelector && feedSelector.value === "custom")) return;
 		const fromIdx = streamEntries.findIndex((e) => e.instanceId === fromId);
 		const toIdx = streamEntries.findIndex((e) => e.instanceId === toId);
 		if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
 		const moved = streamEntries.splice(fromIdx, 1)[0];
-		// insert before the target index (matching DOM insertBefore behavior)
-		streamEntries.splice(toIdx, 0, moved);
+		let insertIndex = toIdx;
+		if (fromIdx < toIdx) insertIndex -= 1;
+		if (!placeBefore) insertIndex += 1;
+		if (insertIndex < 0) insertIndex = 0;
+		if (insertIndex > streamEntries.length) insertIndex = streamEntries.length;
+		streamEntries.splice(insertIndex, 0, moved);
 		saveList();
 		// Reorder DOM nodes without destroying players
 		try {
@@ -450,7 +456,11 @@ function addStreamTile(url, passedInstanceId, labelText) {
 				(t) => t.dataset && t.dataset.instanceId === toId
 			);
 			if (fromTile && toTile && fromTile !== toTile) {
-				grid.insertBefore(fromTile, toTile);
+				const parent = toTile.parentNode || grid;
+				if (parent && parent.contains(toTile)) {
+					const reference = placeBefore ? toTile : toTile.nextSibling;
+					parent.insertBefore(fromTile, reference);
+				}
 			}
 		} catch {}
 		layoutGrid();
