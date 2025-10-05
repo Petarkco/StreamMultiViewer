@@ -2930,7 +2930,9 @@ function layoutGrid() {
 			8,
 			Math.max(1, f + Math.max(1, Math.min(m, 6)))
 		);
-		for (let totalCols = 1; totalCols <= maxTotalCols; totalCols++) {
+		let minTotalCols = m > 0 ? 2 : 1;
+		if (minTotalCols > maxTotalCols) minTotalCols = maxTotalCols;
+		for (let totalCols = minTotalCols; totalCols <= maxTotalCols; totalCols++) {
 			const colW = (availableW - gap * (totalCols - 1)) / totalCols;
 			if (colW <= 0) continue;
 			const rowH = (colW * aspectH) / aspectW;
@@ -2941,6 +2943,8 @@ function layoutGrid() {
 				let leftover = totalCols - baseSpan * heroCols;
 				for (let i = 0; i < heroCols && leftover > 0; i++, leftover--)
 					spans[i]++;
+				if (m > 0 && heroCols === 1 && totalCols > 1)
+					spans[0] = Math.max(1, Math.min(spans[0], totalCols - 1));
 				const minSpan = Math.min(...spans);
 				const maxSpan = Math.max(...spans);
 				const minHeroWidth =
@@ -3008,7 +3012,19 @@ function layoutGrid() {
 			heroOffsets.push(accCols);
 			accCols += spans[i];
 		}
-		const heroTotalRows = heroRows * heroRowSpan;
+		const occupancy = new Map();
+		const ensureRow = (row) => {
+			let set = occupancy.get(row);
+			if (!set) {
+				set = new Set();
+				occupancy.set(row, set);
+			}
+			return set;
+		};
+		const markRange = (row, colStart, span) => {
+			const set = ensureRow(row);
+			for (let c = 0; c < span; c++) set.add(colStart + c);
+		};
 		let heroPlaced = 0;
 		focusedTiles.forEach((t) => {
 			const heroRowIndex = Math.floor(heroPlaced / heroCols);
@@ -3020,18 +3036,31 @@ function layoutGrid() {
 			t.style.gridRow = `${rowStart} / span ${heroRowSpan}`;
 			t.style.gridColumnStart = `${colStart}`;
 			t.style.gridRowStart = `${rowStart}`;
+			for (let r = 0; r < heroRowSpan; r++)
+				markRange(rowStart + r, colStart, span);
 			heroPlaced++;
 		});
-		let idx = 0;
-		others.forEach((t) => {
-			const colStart = (idx % totalCols) + 1;
-			const rowStart = heroTotalRows + Math.floor(idx / totalCols) + 1;
-			t.style.gridColumn = `${colStart} / span 1`;
-			t.style.gridRow = `${rowStart} / span 1`;
-			t.style.gridColumnStart = `${colStart}`;
-			t.style.gridRowStart = `${rowStart}`;
-			idx++;
-		});
+		const placeOther = (tile) => {
+			let row = 1;
+			for (;;) {
+				const set = ensureRow(row);
+				let placed = false;
+				for (let col = 1; col <= totalCols; col++) {
+					if (!set.has(col)) {
+						tile.style.gridColumn = `${col} / span 1`;
+						tile.style.gridRow = `${row} / span 1`;
+						tile.style.gridColumnStart = `${col}`;
+						tile.style.gridRowStart = `${row}`;
+						markRange(row, col, 1);
+						placed = true;
+						break;
+					}
+				}
+				if (placed) break;
+				row++;
+			}
+		};
+		others.forEach(placeOther);
 		return;
 	}
 	let bestCols = 1,
