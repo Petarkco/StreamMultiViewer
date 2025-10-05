@@ -219,9 +219,39 @@ button:active {
 	opacity: 0.75;
 	border-color: #3a7afe;
 }
+.tile.drag-source-hidden {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+}
 .tile.drop-target {
 	outline: 2px dashed #3a7afe;
 	outline-offset: -2px;
+}
+.tile.drop-target-before::before,
+.tile.drop-target-after::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 4px;
+	background: rgba(58, 122, 254, 0.8);
+	box-shadow: 0 0 10px rgba(58, 122, 254, 0.5);
+}
+.tile.drop-target-before::before {
+	top: -2px;
+}
+.tile.drop-target-after::after {
+	bottom: -2px;
+}
+
+.drop-placeholder {
+	border: 2px dashed rgba(58, 122, 254, 0.7);
+	border-radius: 0;
+	background: rgba(58, 122, 254, 0.08);
+	min-height: 120px;
+	transition: background 120ms ease, border-color 120ms ease;
+	pointer-events: none;
 }
 
 /* Smooth FLIP transitions */
