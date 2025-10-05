@@ -437,13 +437,22 @@ function addStreamTile(url, passedInstanceId, labelText) {
 		const toIdx = streamEntries.findIndex((e) => e.instanceId === toId);
 		if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
 		const moved = streamEntries.splice(fromIdx, 1)[0];
+		// insert before the target index (matching DOM insertBefore behavior)
 		streamEntries.splice(toIdx, 0, moved);
 		saveList();
-		// Remove all tiles and re-add in new order
-		removeAllTiles(false);
-		streamEntries.forEach((entry) =>
-			addStreamTile(entry.url, entry.instanceId, entry.labelText)
-		);
+		// Reorder DOM nodes without destroying players
+		try {
+			const tiles = Array.from(grid.querySelectorAll(".tile"));
+			const fromTile = tiles.find(
+				(t) => t.dataset && t.dataset.instanceId === fromId
+			);
+			const toTile = tiles.find(
+				(t) => t.dataset && t.dataset.instanceId === toId
+			);
+			if (fromTile && toTile && fromTile !== toTile) {
+				grid.insertBefore(fromTile, toTile);
+			}
+		} catch {}
 		layoutGrid();
 	}
 	const video = document.createElement("video");
