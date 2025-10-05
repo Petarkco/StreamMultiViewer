@@ -109,6 +109,8 @@ function saveSettings() {
 	try {
 		localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 	} catch {}
+	heroContainer.style.height = "";
+	heroContainer.style.minHeight = "";
 }
 
 // create a simple settings menu when clicking the settings button
@@ -226,26 +228,29 @@ if (feedSelector) {
 	});
 }
 
-// When ch9 mode is selected, show all city labels only while the pointer is
-// directly over a tile. Previously we showed labels for any pointer inside
-// the grid which left labels visible when the cursor was between tiles.
-// Use pointermove to detect when the pointer is over a .tile and pointerleave
-// to clear the state when leaving the grid entirely.
-grid.addEventListener("pointermove", (e) => {
-	try {
-		if (!feedSelector || feedSelector.value !== "ch9") return;
-		const overTile =
-			!!e.target && !!e.target.closest && e.target.closest(".tile");
-		if (overTile) grid.classList.add("show-all-labels");
-		else grid.classList.remove("show-all-labels");
-	} catch {}
-});
-grid.addEventListener("pointerleave", () => {
-	try {
-		if (feedSelector && feedSelector.value === "ch9")
-			grid.classList.remove("show-all-labels");
-	} catch {}
-});
+// When ch9 mode is selected, show city labels only while the pointer is over
+// any tile. Apply the same behaviour for both the hero stack and regular grid.
+const attachCh9HoverHandlers = (container) => {
+	if (!container) return;
+	container.addEventListener("pointermove", (e) => {
+		try {
+			if (!feedSelector || feedSelector.value !== "ch9") return;
+			const overTile =
+				!!e.target && !!e.target.closest && e.target.closest(".tile");
+			if (overTile) container.classList.add("show-all-labels");
+			else container.classList.remove("show-all-labels");
+		} catch {}
+	});
+	container.addEventListener("pointerleave", () => {
+		try {
+			if (feedSelector && feedSelector.value === "ch9")
+				container.classList.remove("show-all-labels");
+		} catch {}
+	});
+};
+
+attachCh9HoverHandlers(grid);
+attachCh9HoverHandlers(heroGrid);
 
 addBtn.addEventListener("click", () => {
 	const raw = input.value.trim();
@@ -468,7 +473,10 @@ function addStreamTile(url, passedInstanceId, labelText) {
 				(t) => t.dataset && t.dataset.instanceId === toId
 			);
 			if (fromTile && toTile && fromTile !== toTile) {
-				grid.insertBefore(fromTile, toTile);
+				const parent = toTile.parentNode || grid;
+				if (parent && parent.contains(toTile)) {
+					parent.insertBefore(fromTile, toTile);
+				}
 			}
 		} catch {}
 		layoutGrid();
@@ -2920,6 +2928,8 @@ function layoutHeroSection(
 	container.style.gridAutoRows = `${best.tileH}px`;
 	container.style.gridAutoFlow = "row";
 	container.style.gridTemplateRows = "";
+	container.style.height = "auto";
+	container.style.minHeight = "0";
 	tiles.forEach((tile) => {
 		tile.style.gridColumn = "span 1";
 		tile.style.gridRow = "span 1";

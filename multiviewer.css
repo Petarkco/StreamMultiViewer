@@ -30,18 +30,32 @@ body {
 	width: 100vw;
 	height: 100vh;
 	padding: 6px;
-	display: flex;
-	flex-direction: column;
+	display: grid;
+	grid-template-rows: auto auto 1fr;
 	gap: 6px;
 }
 
+.wrap > .toolbar {
+	grid-row: 1;
+}
+
 #heroGrid {
-	flex: none;
+	grid-row: 2;
+	min-height: 0;
 }
 
 #grid {
-	flex: 1 1 auto;
+	grid-row: 3;
 	min-height: 0;
+}
+
+.grid.hero-grid {
+	height: auto;
+	min-height: 0;
+}
+
+#heroGrid[hidden] {
+	display: none !important;
 }
 
 .toolbar {
