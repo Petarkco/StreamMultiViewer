@@ -737,6 +737,98 @@ function addStreamTile(url, passedInstanceId, labelText) {
 		tile.appendChild(topLabel);
 	}
 
+	// Allow drag to start from inner elements (video/overlays) in custom mode
+	if (isCustomMode) {
+		const attachInnerDrag = (el) => {
+			if (!el) return;
+			try {
+				el.setAttribute("draggable", "true");
+			} catch {}
+			// Start drag from the inner element as if it started on the tile
+			el.addEventListener("dragstart", (e) => {
+				// mirror tile's dragstart logic
+				tile.classList.add("dragging");
+				if (e.dataTransfer) {
+					e.dataTransfer.effectAllowed = "move";
+					e.dataTransfer.setData("text/plain", tile.dataset.instanceId || "");
+				}
+				dragState.sourceId = tile.dataset.instanceId || null;
+				dragState.sourceTile = tile;
+				ensureDragPlaceholder(tile);
+				moveDragPlaceholder(tile, true);
+				removeDropTargetHighlights();
+				// Let the UA capture a drag image before hiding the source
+				setTimeout(() => {
+					if (dragState.sourceTile === tile)
+						tile.classList.add("drag-source-hidden");
+				}, 0);
+				e.stopPropagation();
+			});
+			el.addEventListener("dragover", (e) => {
+				if (!dragState.sourceId) return;
+				e.preventDefault();
+				e.stopPropagation();
+				if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+				const rect = tile.getBoundingClientRect();
+				const dropBefore = e.clientY < rect.top + rect.height / 2;
+				tile.classList.add("drop-target");
+				tile.classList.toggle("drop-target-before", dropBefore);
+				tile.classList.toggle("drop-target-after", !dropBefore);
+				if (tile.dataset.instanceId === dragState.sourceId) {
+					moveDragPlaceholder(tile, true);
+					return;
+				}
+				moveDragPlaceholder(tile, dropBefore);
+			});
+			el.addEventListener("dragleave", () => {
+				tile.classList.remove(
+					"drop-target",
+					"drop-target-before",
+					"drop-target-after"
+				);
+			});
+			el.addEventListener("drop", (e) => {
+				if (!dragState.sourceId) return;
+				let fromId = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
+				if (!fromId) fromId = dragState.sourceId || "";
+				if (!fromId || fromId !== dragState.sourceId) return;
+				const toId = tile.dataset.instanceId;
+				if (!toId) return;
+				e.preventDefault();
+				e.stopPropagation();
+				tile.classList.remove(
+					"drop-target",
+					"drop-target-before",
+					"drop-target-after"
+				);
+				const rect = tile.getBoundingClientRect();
+				const dropBefore = e.clientY < rect.top + rect.height / 2;
+				if (fromId === toId) {
+					clearDragState(true);
+					layoutGrid();
+					return;
+				}
+				reorderTiles(fromId, toId, dropBefore);
+			});
+			el.addEventListener("dragend", () => {
+				tile.classList.remove("dragging");
+				removeDropTargetHighlights();
+				clearDragState(true);
+				layoutGrid();
+			});
+		};
+		// Attach to key inner elements
+		attachInnerDrag(video);
+		attachInnerDrag(actions);
+		attachInnerDrag(bottom);
+		attachInnerDrag(spinnerOverlay);
+		attachInnerDrag(debugPanel);
+		try {
+			const maybeLabel = tile.querySelector(".top-left-label");
+			attachInnerDrag(maybeLabel);
+		} catch {}
+	}
+
 	// apply settings defaults (muted/autoplay and debug visibility)
 	try {
 		if (settings && typeof settings.autoplayMuted !== "undefined") {

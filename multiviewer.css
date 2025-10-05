@@ -185,7 +185,10 @@ button {
 
 button:hover {
 	background: linear-gradient(180deg, #1b2431, #161e29);
-}
+		video, .hover-actions, .bottom-actions, .spinner-overlay, .debug-panel, .top-left-label {
+			/* Allow drag gestures to initiate on these elements when tile is draggable */
+			cursor: move;
+		}
 
 button:active {
 	transform: translateY(1px);
