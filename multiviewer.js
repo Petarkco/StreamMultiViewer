@@ -395,13 +395,15 @@ function addStreamTile(url, passedInstanceId, labelText) {
 	tile.tabIndex = 0;
 	const isCustomMode = feedSelector && feedSelector.value === "custom";
 	// Disable dragging if fullscreen is active to prevent inadvertent reorders
-	const allowDrag = isCustomMode && !(() => {
-		try {
-			return !!document.fullscreenElement;
-		} catch {
-			return false;
-		}
-	})();
+	const allowDrag =
+		isCustomMode &&
+		!(() => {
+			try {
+				return !!document.fullscreenElement;
+			} catch {
+				return false;
+			}
+		})();
 	tile.setAttribute("draggable", allowDrag ? "true" : "false");
 	tile.dataset.instanceId = passedInstanceId || "";
 
