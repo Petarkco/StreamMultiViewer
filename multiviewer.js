@@ -2971,9 +2971,16 @@ function layoutGrid() {
 
 		// Compute total height used by the small grid to determine remaining height for heroes
 		const rowsSmall = Math.ceil(m / Math.max(1, bestColsSmall));
-		const totalSmallH = rowsSmall > 0 ? rowsSmall * tileHSmall + (rowsSmall - 1) * gap : 0;
-		const availableForHeroes = Math.max(0, availableH - totalSmallH - (f - 1) * gap - gap);
-		const heroHFit = Math.max(1, Math.floor(Math.min(heroH, availableForHeroes / Math.max(1, f))));
+		const totalSmallH =
+			rowsSmall > 0 ? rowsSmall * tileHSmall + (rowsSmall - 1) * gap : 0;
+		const availableForHeroes = Math.max(
+			0,
+			availableH - totalSmallH - (f - 1) * gap - gap
+		);
+		const heroHFit = Math.max(
+			1,
+			Math.floor(Math.min(heroH, availableForHeroes / Math.max(1, f)))
+		);
 		// Focused rows span enough small rows to reach the fitted hero height
 		const focusedRowSpan = Math.max(1, Math.round(heroHFit / tileHSmall));
 		tiles.forEach((t) => {
